@@ -1,6 +1,6 @@
 # RequisitoGraph — MVP
 
-MVP web para demonstrar rastreabilidade inteligente entre requisitos. A experiência simula a conexão de uma pasta do Google Drive, a análise de histórias de usuário, a criação automática de um grafo de relações e a identificação de possíveis impactos quando um requisito muda.
+MVP web para demonstrar rastreabilidade inteligente entre requisitos. A experiência simula a conexão de uma pasta do Google Drive, organiza 100 histórias de usuário em 8 pastas e transforma uma US selecionada em um grafo animado com suas dependências e histórias dependentes.
 
 ## Como executar
 
@@ -20,6 +20,8 @@ npm run build
 - conexão, leitura e sincronização com o Google Drive;
 - análise por LLM;
 - identificação de relações, evidências e níveis de confiança;
+- organização inicial das USs conforme as pastas fictícias do Drive;
+- transição animada da visão por pastas para a rede da US selecionada;
 - detecção de alterações e sugestões de impacto;
 - links para os documentos de origem e decisões sobre impactos.
 

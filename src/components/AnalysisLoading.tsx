@@ -3,7 +3,7 @@ import { Check, FileSearch, FolderSearch, GitBranch, LoaderCircle, Sparkles } fr
 
 const steps = [
   'Conectando ao Google Drive',
-  '15 documentos encontrados',
+  '100 documentos encontrados em 8 pastas',
   'Lendo histórias de usuário',
   'Identificando regras e dependências',
   'Construindo mapa de requisitos',
@@ -44,8 +44,8 @@ export function AnalysisLoading({ onDone }: { onDone: () => void }) {
           </div>
         ) : (
           <div className="analysis-result">
-            <div><FileSearch size={18} /><strong>15</strong><span>requisitos encontrados</span></div>
-            <div><GitBranch size={18} /><strong>32</strong><span>relações identificadas</span></div>
+            <div><FileSearch size={18} /><strong>100</strong><span>requisitos encontrados</span></div>
+            <div><GitBranch size={18} /><strong>202</strong><span>relações identificadas</span></div>
             <div><Sparkles size={18} /><strong>3</strong><span>possíveis impactos</span></div>
           </div>
         )}

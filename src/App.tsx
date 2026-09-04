@@ -3,9 +3,10 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   AlertTriangle,
   ArrowRight,
+  ChevronLeft,
   Database,
+  Folder,
   GitBranch,
-  LayoutList,
   Link2,
   Map,
   Search,
@@ -13,18 +14,18 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { AnalysisLoading } from './components/AnalysisLoading';
+import { FolderOverview } from './components/FolderOverview';
 import { ImpactAnalysis } from './components/ImpactAnalysis';
 import { ImpactsPage } from './components/ImpactsPage';
 import { RelationDetails } from './components/RelationDetails';
 import { RequirementDetails } from './components/RequirementDetails';
 import { RequirementDocument } from './components/RequirementDocument';
 import { RequirementGraph } from './components/RequirementGraph';
-import { RequirementsTable } from './components/RequirementsTable';
 import { requirementById } from './data/requirements';
-import type { Relation } from './data/relations';
+import { relationCount, type Relation } from './data/relations';
 
 type AppScreen = 'connect' | 'analysis' | 'workspace';
-type WorkspaceView = 'map' | 'requirements' | 'impacts';
+type WorkspaceView = 'map' | 'impacts';
 type ImpactDecision = 'impacted' | 'confirmed' | 'dismissed';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
   const [urlError, setUrlError] = useState('');
   const [view, setView] = useState<WorkspaceView>('map');
   const [query, setQuery] = useState('');
+  const [graphRoot, setGraphRoot] = useState<string | null>(null);
   const [selectedRequirement, setSelectedRequirement] = useState<string | null>(null);
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [selectedRelation, setSelectedRelation] = useState<Relation | null>(null);
@@ -54,6 +56,7 @@ export default function App() {
 
   const focusRequirement = (id: string) => {
     setView('map');
+    setGraphRoot(id);
     setSelectedRequirement(id);
     setFocusId(id);
     setDocumentId(null);
@@ -64,8 +67,19 @@ export default function App() {
     setImpactMode(true);
     setView('map');
     setQuery('');
+    setGraphRoot('especie');
     setSelectedRequirement(null);
     setFocusId('especie');
+  };
+
+  const simulateChangeInFolders = () => {
+    setShowImpactSimulation(false);
+    setImpactMode(true);
+    setView('map');
+    setQuery('');
+    setGraphRoot(null);
+    setSelectedRequirement(null);
+    setFocusId(null);
   };
 
   if (screen === 'connect') {
@@ -90,10 +104,10 @@ export default function App() {
             {urlError ? <span className="form-error">{urlError}</span> : <span id="drive-hint" className="form-hint"><ShieldCheck size={13} /> Nesta demonstração, nenhum documento real será acessado.</span>}
           </form>
 
-          <GraphPreview />
+          <FolderPreview />
           <div className="trust-row">
-            <span><Database size={14} /> 15 documentos</span>
-            <span><GitBranch size={14} /> 32 relações identificadas</span>
+            <span><Database size={14} /> 100 documentos</span>
+            <span><GitBranch size={14} /> 202 relações identificadas</span>
             <span><Sparkles size={14} /> análise mockada para demonstração</span>
           </div>
         </section>
@@ -110,21 +124,20 @@ export default function App() {
           <Brand compact />
           <nav aria-label="Navegação principal">
             <SidebarButton icon={<Map size={16} />} label="Mapa" active={view === 'map'} onClick={() => setView('map')} />
-            <SidebarButton icon={<LayoutList size={16} />} label="Requisitos" active={view === 'requirements'} onClick={() => setView('requirements')} />
             <SidebarButton icon={<AlertTriangle size={16} />} label="Impactos" active={view === 'impacts'} count={impactMode ? 3 : undefined} onClick={() => setView('impacts')} />
           </nav>
           <div className="sidebar-project">
             <span className="section-kicker">Fonte conectada</span>
-            <div className="source-row"><span className="drive-dot" /><div><strong>Requisitos</strong><small>15 documentos</small></div></div>
+            <div className="source-row"><span className="drive-dot" /><div><strong>Requisitos</strong><small>8 pastas · 100 documentos</small></div></div>
           </div>
           <div className="sidebar-foot"><span className="avatar">FS</span><div><strong>Projeto GTA</strong><small>Workspace demo</small></div></div>
         </aside>
 
         <div className="workspace">
           <header className="topbar">
-            <div className="workspace-title"><span>Defesa Agropecuária</span><span>/</span><strong>{view === 'map' ? 'Mapa de requisitos' : view === 'requirements' ? 'Requisitos' : 'Impactos'}</strong></div>
+            <div className="workspace-title"><span>Defesa Agropecuária</span><span>/</span><strong>{view === 'map' ? 'Mapa de requisitos' : 'Impactos'}</strong></div>
             <div className="topbar-actions">
-              <label className="search-box"><Search size={15} /><input value={query} onChange={(event) => { setQuery(event.target.value); setView('map'); setFocusId(null); }} placeholder="Buscar requisito…" aria-label="Buscar requisito" /><kbd>⌘ K</kbd></label>
+              <label className="search-box"><Search size={15} /><input value={query} onChange={(event) => { setQuery(event.target.value); setView('map'); setGraphRoot(null); setSelectedRequirement(null); setFocusId(null); setImpactMode(false); }} placeholder="Buscar requisito…" aria-label="Buscar requisito" /><kbd>⌘ K</kbd></label>
               <button className="simulate-button" onClick={() => setShowImpactSimulation(true)}><Sparkles size={15} /> Simular alteração</button>
             </div>
           </header>
@@ -132,21 +145,40 @@ export default function App() {
           <main className="workspace-content">
             {view === 'map' && (
               <section className={`map-page ${selectedRequirement ? 'has-panel' : ''}`}>
-                <div className="map-toolbar">
-                  <div><h1>Mapa de requisitos</h1><span>15 requisitos · 32 relações</span></div>
-                  <div className="map-status"><span className="status-live" /> Sincronizado há 12 min</div>
-                </div>
-                <RequirementGraph
-                  query={query}
-                  focusId={focusId}
-                  selectedRelationId={selectedRelation?.id || null}
-                  impactMode={impactMode}
-                  impactStates={impactStates}
-                  onSelectRequirement={(id) => { setSelectedRequirement(id); setFocusId(null); }}
-                  onSelectRelation={(relation) => setSelectedRelation(relation)}
-                />
-                {query && <div className="search-result-note">{Object.values(requirementById).filter((item) => item.title.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).length} requisitos encontrados para “{query}”</div>}
-                {impactMode && <ImpactLegend onClose={() => { setImpactMode(false); setImpactStates({}); }} />}
+                {!graphRoot ? (
+                  <FolderOverview
+                    query={query}
+                    impactMode={impactMode}
+                    onSelectRequirement={(id) => {
+                      setGraphRoot(id);
+                      setSelectedRequirement(null);
+                      setFocusId(id);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <div className="map-toolbar graph-mode-toolbar">
+                      <div className="graph-heading">
+                        <button className="back-to-folders" onClick={() => { setGraphRoot(null); setSelectedRequirement(null); setSelectedRelation(null); setFocusId(null); setImpactMode(false); }}><ChevronLeft size={14} /> Pastas</button>
+                        <div><h1>{requirementById[graphRoot].title}</h1><span>{relationCount(graphRoot)} relações diretas · dependências e dependentes</span></div>
+                      </div>
+                      <div className="map-status"><span className="status-live" /> Rede construída a partir da US selecionada</div>
+                    </div>
+                    <div className="graph-side-label dependent-label">Histórias dependentes</div>
+                    <div className="graph-side-label dependency-label">Dependências utilizadas</div>
+                    <RequirementGraph
+                      rootId={graphRoot}
+                      query={query}
+                      focusId={focusId}
+                      selectedRelationId={selectedRelation?.id || null}
+                      impactMode={impactMode}
+                      impactStates={impactStates}
+                      onSelectRequirement={(id) => { setSelectedRequirement(id); setFocusId(null); }}
+                      onSelectRelation={(relation) => setSelectedRelation(relation)}
+                    />
+                  </>
+                )}
+                {impactMode && graphRoot && <ImpactLegend onClose={() => { setImpactMode(false); setImpactStates({}); }} />}
                 {selectedRequirement && (
                   <RequirementDetails
                     requirementId={selectedRequirement}
@@ -161,13 +193,12 @@ export default function App() {
                 )}
               </section>
             )}
-            {view === 'requirements' && <RequirementsTable onOpen={focusRequirement} />}
             {view === 'impacts' && <ImpactsPage onViewGraph={viewImpactsOnGraph} />}
           </main>
         </div>
       </div>
 
-      {showImpactSimulation && <ImpactAnalysis onClose={() => setShowImpactSimulation(false)} onViewGraph={viewImpactsOnGraph} />}
+      {showImpactSimulation && <ImpactAnalysis onClose={() => setShowImpactSimulation(false)} onViewGraph={simulateChangeInFolders} />}
       {selectedRelation && <RelationDetails relation={selectedRelation} onClose={() => setSelectedRelation(null)} onOpenDocument={(id) => { setSelectedRelation(null); setDocumentId(id); }} />}
       {documentId && <RequirementDocument requirementId={documentId} onClose={() => setDocumentId(null)} onFocusRequirement={focusRequirement} />}
     </ReactFlowProvider>
@@ -183,20 +214,20 @@ function SidebarButton({ icon, label, active, count, onClick }: { icon: React.Re
 }
 
 function ImpactLegend({ onClose }: { onClose: () => void }) {
-  return <div className="impact-legend"><div className="legend-title"><span>Análise de impacto</span><button onClick={onClose}>Encerrar</button></div><div><span className="legend-dot changed" /> Alterado</div><div><span className="legend-dot impacted" /> Possível impacto</div><div><span className="legend-dot unrelated" /> Não relacionado à mudança</div></div>;
+  return <div className="impact-legend"><div className="legend-title"><span>Atualização detectada</span><button onClick={onClose}>Encerrar</button></div><div><span className="legend-dot changed" /> Arquivo atualizado</div><div><span className="legend-dot impacted" /> US relacionada</div><div><span className="legend-dot unrelated" /> Não relacionada</div></div>;
 }
 
-function GraphPreview() {
+function FolderPreview() {
+  const previews = [
+    { title: 'Ready — Trânsito Animal', items: ['Emissão de GTA', 'Recebimento de GTA', 'Cancelamento de GTA', 'Finalidade de Trânsito'] },
+    { title: 'Ready — Espécies', items: ['Espécie', 'Vacinação', 'Doença', 'Saldo de rebanho'] },
+    { title: 'Ready — Cadastros', items: ['Produtor', 'Pessoa Física/Jurídica', 'Estabelecimento', 'Responsável técnico'] },
+  ];
   return (
     <div className="preview-window" aria-hidden="true">
-      <div className="preview-top"><span /><span /><span /><div className="preview-title">Mapa de requisitos</div></div>
-      <div className="preview-canvas">
-        <div className="fake-node primary" style={{ left: '41%', top: '38%' }}><small>US</small><strong>Emissão de GTA</strong><span>8 relações</span></div>
-        <div className="fake-node" style={{ left: '10%', top: '20%' }}><small>US</small><strong>Produtor</strong><span>4 relações</span></div>
-        <div className="fake-node" style={{ left: '13%', top: '66%' }}><small>US</small><strong>Exploração Pecuária</strong><span>6 relações</span></div>
-        <div className="fake-node" style={{ right: '8%', top: '15%' }}><small>US</small><strong>Espécie</strong><span>7 relações</span></div>
-        <div className="fake-node" style={{ right: '5%', top: '65%' }}><small>US</small><strong>Vacinação</strong><span>4 relações</span></div>
-        <svg className="fake-lines" viewBox="0 0 900 380" preserveAspectRatio="none"><path d="M220 95 C360 95 330 170 410 185" /><path d="M250 285 C350 275 350 220 410 205" /><path d="M555 185 C650 155 680 80 740 75" /><path d="M555 205 C650 230 670 295 745 300" /><path d="M235 105 C350 40 640 45 740 70" /></svg>
+      <div className="preview-top"><span /><span /><span /><div className="preview-title">Requisitos organizados por pasta</div></div>
+      <div className="preview-folder-grid">
+        {previews.map((folder) => <div className="preview-folder" key={folder.title}><header><Folder size={13} /><strong>{folder.title}</strong><span>13 US</span></header><div>{folder.items.map((item) => <span key={item}><small>US</small>{item}</span>)}</div></div>)}
       </div>
     </div>
   );

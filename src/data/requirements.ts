@@ -1,5 +1,6 @@
 export type Requirement = {
   id: string;
+  folderId: string;
   title: string;
   type: 'US';
   description: string;
@@ -15,7 +16,7 @@ const defaultRules = [
   'Alterações relevantes devem ser registradas para fins de auditoria.',
 ];
 
-export const requirements: Requirement[] = [
+const coreRequirements: Omit<Requirement, 'folderId'>[] = [
   {
     id: 'emissao-gta',
     title: 'Emissão de GTA',
@@ -110,6 +111,63 @@ export const requirements: Requirement[] = [
     description: 'Como atendente, quero manter pessoas físicas e jurídicas para reutilizar dados confiáveis nos cadastros do sistema.',
     acceptanceCriteria: ['Validar CPF ou CNPJ.', 'Manter contatos e endereço.', 'Evitar cadastros duplicados.'], businessRules: defaultRules,
   },
+];
+
+export type RequirementFolder = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+export const requirementFolders: RequirementFolder[] = [
+  { id: 'ready-transito', title: 'Ready — Trânsito Animal', description: 'Emissão, recebimento e manutenção de guias' },
+  { id: 'ready-rebanho', title: 'Ready — Espécies e Rebanho', description: 'Saldos, espécies e controles produtivos' },
+  { id: 'ready-cadastros', title: 'Ready — Pessoas e Cadastros', description: 'Pessoas, produtores e estabelecimentos' },
+  { id: 'ready-exploracao', title: 'Ready — Exploração Pecuária', description: 'Estrutura e operação das explorações' },
+  { id: 'backlog-sanitario', title: 'Backlog — Controle Sanitário', description: 'Doenças, campanhas e fiscalização' },
+  { id: 'backlog-gts', title: 'Backlog — GTS e Transporte', description: 'Transportadores, rotas e autorizações' },
+  { id: 'validacao', title: 'Validação', description: 'Histórias aguardando validação de negócio' },
+  { id: 'suspensos', title: 'Suspensos', description: 'Itens pausados ou aguardando definição' },
+];
+
+const coreFolderById: Record<string, string> = {
+  'emissao-gta': 'ready-transito', finalidade: 'ready-transito', recebimento: 'ready-transito', cancelamento: 'ready-transito', evento: 'ready-transito', abatedouro: 'ready-transito', taxa: 'ready-transito',
+  especie: 'ready-rebanho', vacinacao: 'ready-rebanho', doenca: 'ready-rebanho',
+  produtor: 'ready-cadastros', pessoa: 'ready-cadastros', estabelecimento: 'ready-cadastros',
+  exploracao: 'ready-exploracao', nucleo: 'ready-exploracao',
+};
+
+const additionalTitles: Record<string, string[]> = {
+  'ready-transito': ['Consulta de GTA', 'Impressão de GTA', 'Segunda via de GTA', 'Prorrogação de validade', 'Modelo de guia', 'Histórico de emissões'],
+  'ready-rebanho': ['Saldo de rebanho', 'Inventário animal', 'Grupo de espécies', 'Faixa etária animal', 'Movimentação de saldo', 'Ajuste de estoque animal', 'Declaração de rebanho', 'Classificação de animais', 'Controle de lotes', 'Consolidação de saldos'],
+  'ready-cadastros': ['Endereço rural', 'Contato do produtor', 'Responsável técnico', 'Documento cadastral', 'Vínculo de propriedade', 'Representante legal', 'Inscrição estadual', 'Município e regional', 'Situação cadastral', 'Histórico de responsáveis'],
+  'ready-exploracao': ['Ativação de exploração', 'Inativação de exploração', 'Tipo de exploração', 'Capacidade produtiva', 'Coordenadas da propriedade', 'Unidade produtiva', 'Área de pastagem', 'Responsável pela exploração', 'Consórcio de produtores', 'Transferência de exploração', 'Histórico produtivo'],
+  'backlog-sanitario': ['Campanha sanitária', 'Declaração de vacinação', 'Fiscalização sanitária', 'Interdição de propriedade', 'Desinterdição sanitária', 'Foco de doença', 'Notificação compulsória', 'Exame laboratorial', 'Atestado sanitário', 'Calendário de campanha', 'Cobertura vacinal', 'Pendência sanitária'],
+  'backlog-gts': ['Guia de Trânsito Sanitário', 'Transportador', 'Veículo de transporte', 'Rota de trânsito', 'Posto de fiscalização', 'Autorização especial', 'Trânsito interestadual', 'Trânsito intraestadual', 'Lacre de carga', 'Responsável pelo transporte', 'Fiscalização em trânsito', 'Chegada ao destino'],
+  validacao: ['Importação de cadastros', 'Exportação de relatórios', 'Auditoria de alterações', 'Notificação ao produtor', 'Fila de análise', 'Aprovação por perfil', 'Correção cadastral', 'Duplicidade de pessoa', 'Anexo documental', 'Consulta pública', 'Assinatura digital', 'Histórico de versões'],
+  suspensos: ['Integração com laboratório', 'Mapa epidemiológico', 'Aplicativo do produtor', 'Operação sem conexão', 'Leitura de QR Code', 'Importação de GTA externa', 'Painel de indicadores', 'Previsão de campanha', 'Integração financeira', 'Cadastro biométrico', 'Georreferenciamento avançado', 'Portal de eventos'],
+};
+
+let generatedIndex = 0;
+const generatedRequirements: Requirement[] = Object.entries(additionalTitles).flatMap(([folderId, titles]) => titles.map((title, index) => {
+  generatedIndex += 1;
+  return {
+    id: `mock-${folderId}-${index + 1}`,
+    folderId,
+    title,
+    type: 'US' as const,
+    description: `Como usuário do sistema, quero gerenciar ${title.toLocaleLowerCase('pt-BR')} para manter o processo agropecuário rastreável e consistente.`,
+    updatedAt: `há ${(generatedIndex % 28) + 1} dias`,
+    owner: generatedIndex % 3 === 0 ? 'Equipe Cadastros' : generatedIndex % 3 === 1 ? 'Equipe Operações' : 'Equipe Sanidade',
+    source: `US-${String(2000 + generatedIndex).padStart(4, '0')} · Google Docs`,
+    acceptanceCriteria: [`Permitir consultar ${title.toLocaleLowerCase('pt-BR')}.`, 'Validar os dados obrigatórios antes da confirmação.', 'Registrar alterações para auditoria.'],
+    businessRules: defaultRules,
+  };
+}));
+
+export const requirements: Requirement[] = [
+  ...coreRequirements.map((item) => ({ ...item, folderId: coreFolderById[item.id] })),
+  ...generatedRequirements,
 ];
 
 export const requirementById = Object.fromEntries(requirements.map((item) => [item.id, item])) as Record<string, Requirement>;

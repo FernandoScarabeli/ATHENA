@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Background,
   Controls,
@@ -6,35 +6,21 @@ import {
   MiniMap,
   ReactFlow,
   useReactFlow,
+  useNodesState,
   type Edge,
   type NodeMouseHandler,
 } from '@xyflow/react';
-import { requirements } from '../data/requirements';
+import { RotateCcw } from 'lucide-react';
+import { requirementById } from '../data/requirements';
 import { relationCount, relations, type Relation } from '../data/relations';
 import { RequirementNode, type RequirementFlowNode } from './RequirementNode';
 
 const nodeTypes = { requirement: RequirementNode };
-const impactedIds = new Set(['emissao-gta', 'exploracao', 'vacinacao']);
-
-const positions: Record<string, { x: number; y: number }> = {
-  'emissao-gta': { x: 610, y: 365 },
-  especie: { x: 1030, y: 95 },
-  produtor: { x: 190, y: 180 },
-  estabelecimento: { x: 100, y: 520 },
-  exploracao: { x: 385, y: 650 },
-  nucleo: { x: 70, y: 790 },
-  vacinacao: { x: 950, y: 605 },
-  finalidade: { x: 980, y: 335 },
-  evento: { x: 1200, y: 420 },
-  abatedouro: { x: 1170, y: 740 },
-  doenca: { x: 880, y: 820 },
-  recebimento: { x: 605, y: 80 },
-  cancelamento: { x: 360, y: 55 },
-  taxa: { x: 665, y: 710 },
-  pessoa: { x: 45, y: 320 },
-};
+const impactIds = new Set(['emissao-gta', 'exploracao', 'vacinacao']);
+const center = { x: 650, y: 420 };
 
 type Props = {
+  rootId: string;
   query: string;
   focusId: string | null;
   selectedRelationId: string | null;
@@ -44,96 +30,169 @@ type Props = {
   onSelectRelation: (relation: Relation) => void;
 };
 
-function GraphFocus({ focusId, query }: Pick<Props, 'focusId' | 'query'>) {
-  const { setCenter, fitView } = useReactFlow();
+function getExpandedPositions(rootId: string, relationSet: Relation[]) {
+  const outgoingIds = [...new Set(relationSet.filter((item) => item.source === rootId).map((item) => item.target))];
+  const incomingIds = [...new Set(relationSet.filter((item) => item.target === rootId).map((item) => item.source))].filter((id) => !outgoingIds.includes(id));
+  const positions: Record<string, { x: number; y: number }> = { [rootId]: center };
+
+  const placeColumn = (ids: string[], side: 'left' | 'right') => {
+    const perColumn = 6;
+    ids.forEach((id, index) => {
+      const column = Math.floor(index / perColumn);
+      const row = index % perColumn;
+      const rowsInColumn = Math.min(perColumn, ids.length - column * perColumn);
+      const spacingY = 126;
+      const startY = center.y + 44 - ((rowsInColumn - 1) * spacingY) / 2;
+      const distance = 390 + column * 245;
+      positions[id] = {
+        x: side === 'left' ? center.x - distance : center.x + distance,
+        y: startY + row * spacingY - 44,
+      };
+    });
+  };
+
+  placeColumn(incomingIds, 'left');
+  placeColumn(outgoingIds, 'right');
+  return positions;
+}
+
+function GraphViewport({ expanded, autoFitEnabled, rootId, focusId }: { expanded: boolean; autoFitEnabled: boolean; rootId: string; focusId: string | null }) {
+  const { fitView, setCenter } = useReactFlow();
 
   useEffect(() => {
-    const normalized = query.trim().toLocaleLowerCase('pt-BR');
-    const matches = requirements.filter((item) => item.title.toLocaleLowerCase('pt-BR').includes(normalized));
-    const targetId = focusId || (normalized && matches.length === 1 ? matches[0].id : null);
-    if (targetId && positions[targetId]) {
-      const point = positions[targetId];
-      setCenter(point.x + 95, point.y + 44, { zoom: 1.05, duration: 650 });
-    } else if (!normalized && !focusId) {
-      fitView({ padding: 0.16, duration: 500 });
-    }
-  }, [fitView, focusId, query, setCenter]);
+    if (!expanded || !autoFitEnabled) return;
+    const timer = window.setTimeout(() => fitView({ padding: 0.17, duration: 650, maxZoom: 1 }), 760);
+    return () => window.clearTimeout(timer);
+  }, [autoFitEnabled, expanded, fitView, rootId]);
+
+  useEffect(() => {
+    if (!focusId || !expanded) return;
+    const timer = window.setTimeout(() => {
+      const node = document.querySelector(`[data-id="${focusId}"]`) as HTMLElement | null;
+      if (node) {
+        const transform = node.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/);
+        if (transform) setCenter(Number(transform[1]) + 95, Number(transform[2]) + 44, { zoom: 1.05, duration: 550 });
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [expanded, focusId, setCenter]);
 
   return null;
 }
 
-export function RequirementGraph({ query, focusId, selectedRelationId, impactMode, impactStates, onSelectRequirement, onSelectRelation }: Props) {
+export function RequirementGraph({ rootId, query, focusId, selectedRelationId, impactMode, impactStates, onSelectRequirement, onSelectRelation }: Props) {
+  const { fitView } = useReactFlow();
+  const [expanded, setExpanded] = useState(false);
+  const [nodes, setNodes, onNodesChange] = useNodesState<RequirementFlowNode>([]);
+  const [layoutChanged, setLayoutChanged] = useState(false);
+  const [restoringLayout, setRestoringLayout] = useState(false);
+  const [autoFitEnabled, setAutoFitEnabled] = useState(true);
+
+  const directRelations = useMemo(() => relations.filter((item) => item.source === rootId || item.target === rootId), [rootId]);
+  const relatedIds = useMemo(() => new Set([rootId, ...directRelations.flatMap((item) => [item.source, item.target])]), [directRelations, rootId]);
+  const visibleRelations = useMemo(() => relations.filter((item) => relatedIds.has(item.source) && relatedIds.has(item.target)), [relatedIds]);
+  const expandedPositions = useMemo(() => getExpandedPositions(rootId, directRelations), [directRelations, rootId]);
+
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR');
-  const matchingIds = useMemo(() => new Set(requirements.filter((item) => item.title.toLocaleLowerCase('pt-BR').includes(normalizedQuery)).map((item) => item.id)), [normalizedQuery]);
-  const nodes = useMemo<RequirementFlowNode[]>(() => requirements.map((requirement) => {
+  const nodeData = useMemo(() => Object.fromEntries([...relatedIds].map((id) => {
+    const requirement = requirementById[id];
     let state: RequirementFlowNode['data']['state'] = 'normal';
-    if (impactMode && requirement.id === 'especie') state = 'changed';
-    if (impactMode && impactedIds.has(requirement.id)) state = impactStates[requirement.id] || 'impacted';
-    const relatedToImpact = requirement.id === 'especie' || impactedIds.has(requirement.id);
-    const queryMiss = Boolean(normalizedQuery) && !matchingIds.has(requirement.id);
-
-    return {
-      id: requirement.id,
-      type: 'requirement',
-      position: positions[requirement.id],
-      data: {
+    if (impactMode && id === 'especie') state = 'changed';
+    if (impactMode && impactIds.has(id)) state = impactStates[id] || 'impacted';
+    const relatedToImpact = id === 'especie' || impactIds.has(id);
+    const matchesQuery = !normalizedQuery || requirement.title.toLocaleLowerCase('pt-BR').includes(normalizedQuery);
+    return [id, {
         title: requirement.title,
-        relationCount: relationCount(requirement.id),
+        relationCount: relationCount(id),
         state,
-        matched: Boolean(normalizedQuery) && matchingIds.has(requirement.id),
-        dimmed: (impactMode && !relatedToImpact) || queryMiss,
-      },
-    };
-  }), [impactMode, impactStates, matchingIds, normalizedQuery]);
+        isRoot: id === rootId,
+        matched: Boolean(normalizedQuery) && matchesQuery,
+        dimmed: (impactMode && !relatedToImpact) || !matchesQuery,
+      }];
+  })), [impactMode, impactStates, normalizedQuery, relatedIds, rootId]) as Record<string, RequirementFlowNode['data']>;
 
-  const edges = useMemo<Edge[]>(() => relations.map((item) => {
+  useEffect(() => {
+    setExpanded(false);
+    setLayoutChanged(false);
+    setRestoringLayout(false);
+    setAutoFitEnabled(true);
+    setNodes([...relatedIds].map((id) => ({ id, type: 'requirement', position: center, data: nodeData[id], draggable: false })));
+    const timer = window.setTimeout(() => {
+      setNodes((current) => current.map((node) => ({ ...node, position: expandedPositions[node.id] || center, draggable: true })));
+      setExpanded(true);
+    }, 90);
+    return () => window.clearTimeout(timer);
+  }, [expandedPositions, relatedIds, rootId, setNodes]);
+
+  useEffect(() => {
+    setNodes((current) => current.map((node) => ({ ...node, data: nodeData[node.id] })));
+  }, [nodeData, setNodes]);
+
+  const edges = useMemo<Edge[]>(() => visibleRelations.map((item, index) => {
     const isSelected = item.id === selectedRelationId;
     const impactRelevant = ['especie', 'emissao-gta', 'exploracao', 'vacinacao'].includes(item.source) && ['especie', 'emissao-gta', 'exploracao', 'vacinacao'].includes(item.target);
-    const queryRelevant = !normalizedQuery || matchingIds.has(item.source) || matchingIds.has(item.target);
-    const opacity = impactMode && !impactRelevant ? 0.08 : queryRelevant ? (isSelected ? 1 : 0.46) : 0.08;
-
+    const edgeColor = impactMode && impactRelevant ? '#c76a27' : isSelected ? '#525f70' : '#b8bec6';
+    const opacity = expanded ? (impactMode && !impactRelevant ? 0.08 : isSelected ? 1 : 0.5) : 0;
     return {
       id: item.id,
       source: item.source,
       target: item.target,
       type: 'smoothstep',
       interactionWidth: 18,
+      animated: expanded && index < 18,
       label: isSelected ? `${item.type} · ${item.confidence}%` : undefined,
       labelStyle: { fontSize: 10, fontWeight: 650, fill: '#4b5563' },
       labelBgStyle: { fill: '#ffffff', fillOpacity: 0.96 },
       labelBgPadding: [7, 4],
       labelBgBorderRadius: 5,
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: isSelected ? '#525f70' : '#b8bec6' },
-      style: { stroke: isSelected ? '#525f70' : '#b8bec6', strokeWidth: isSelected ? 1.8 : 1.05, opacity },
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: edgeColor },
+      style: { stroke: edgeColor, strokeWidth: isSelected || (impactMode && impactRelevant) ? 1.8 : 1.05, opacity, transition: `opacity .35s ease ${Math.min(index * 28, 420)}ms` },
     };
-  }), [impactMode, matchingIds, normalizedQuery, selectedRelationId]);
+  }), [expanded, impactMode, selectedRelationId, visibleRelations]);
 
   const handleNodeClick: NodeMouseHandler<RequirementFlowNode> = (_, node) => onSelectRequirement(node.id);
 
+  const restoreLayout = useCallback(() => {
+    setRestoringLayout(true);
+    setLayoutChanged(false);
+    setNodes((current) => current.map((node) => ({ ...node, position: expandedPositions[node.id] || center, dragging: false })));
+    window.setTimeout(() => fitView({ padding: 0.17, duration: 650, maxZoom: 1 }), 60);
+    window.setTimeout(() => {
+      setRestoringLayout(false);
+    }, 850);
+  }, [expandedPositions, fitView, setNodes]);
+
   return (
-    <div className="graph-wrap">
+    <div className={`graph-wrap dependency-graph ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onNodeDragStart={() => setAutoFitEnabled(false)}
+        onNodeDragStop={() => { if (!restoringLayout) setLayoutChanged(true); }}
         onNodeClick={handleNodeClick}
         onEdgeClick={(_, edge) => {
           const relation = relations.find((item) => item.id === edge.id);
           if (relation) onSelectRelation(relation);
         }}
-        fitView
-        fitViewOptions={{ padding: 0.16 }}
-        minZoom={0.4}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.82 }}
+        minZoom={0.35}
         maxZoom={1.6}
         nodesDraggable
         nodesConnectable={false}
         proOptions={{ hideAttribution: true }}
       >
-        <GraphFocus focusId={focusId} query={query} />
+        <GraphViewport expanded={expanded} autoFitEnabled={autoFitEnabled} rootId={rootId} focusId={focusId} />
         <Background color="#d8dce1" gap={20} size={1} />
         <Controls position="bottom-left" showInteractive={false} />
-        <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.id === 'emissao-gta' ? '#7b8490' : '#c8cdd3'} maskColor="rgba(247,248,250,.72)" />
+        <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.id === rootId ? '#566271' : '#c8cdd3'} maskColor="rgba(247,248,250,.72)" />
       </ReactFlow>
+      {layoutChanged && (
+        <button className="graph-reset-button" onClick={restoreLayout} aria-label="Restaurar posições originais" title="Restaurar posições originais">
+          <RotateCcw size={14} /> Restaurar layout
+        </button>
+      )}
     </div>
   );
 }

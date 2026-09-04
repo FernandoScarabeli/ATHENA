@@ -1,3 +1,5 @@
+import { requirements } from './requirements';
+
 export type RelationType = 'DEPENDE DE' | 'USA DADOS DE' | 'USA REGRA DE' | 'FORNECE DADOS PARA' | 'RELACIONADO A';
 
 export type Relation = {
@@ -20,7 +22,7 @@ const relation = (source: string, target: string, type: RelationType, confidence
   evidence,
 });
 
-export const relations: Relation[] = [
+const coreRelations: Relation[] = [
   relation('emissao-gta', 'especie', 'DEPENDE DE', 94, 'A emissão utiliza a espécie selecionada para determinar regras e opções disponíveis durante o preenchimento.', 'As finalidades disponíveis devem ser filtradas de acordo com a espécie selecionada.'),
   relation('emissao-gta', 'finalidade', 'DEPENDE DE', 92, 'A finalidade determina regras obrigatórias para a emissão.', 'O usuário deve selecionar uma finalidade compatível com a espécie.'),
   relation('emissao-gta', 'produtor', 'USA DADOS DE', 91, 'A emissão precisa identificar o responsável pelos animais.', 'Deve ser informado o produtor responsável.'),
@@ -54,5 +56,18 @@ export const relations: Relation[] = [
   relation('cancelamento', 'taxa', 'USA REGRA DE', 75, 'O cancelamento avalia se a taxa pode ser estornada.', 'Estornar a taxa somente quando permitido pela situação do pagamento.'),
   relation('recebimento', 'abatedouro', 'USA DADOS DE', 72, 'Quando o destino é abate, dados do frigorífico são registrados.', 'Identificar o abatedouro frigorífico responsável pelo recebimento.'),
 ];
+
+const anchorRequirements = ['emissao-gta', 'especie', 'produtor', 'estabelecimento', 'exploracao', 'vacinacao', 'finalidade', 'evento', 'recebimento', 'taxa'];
+const generatedRequirements = requirements.filter((item) => item.id.startsWith('mock-'));
+const generatedRelations: Relation[] = generatedRequirements.flatMap((item, index) => {
+  const anchor = anchorRequirements[index % anchorRequirements.length];
+  const previous = index === 0 ? 'emissao-gta' : generatedRequirements[index - 1].id;
+  return [
+    relation(item.id, anchor, index % 2 === 0 ? 'DEPENDE DE' : 'USA DADOS DE', 68 + (index % 27), `${item.title} utiliza definições mantidas em outro requisito do domínio.`, `Os dados necessários devem ser obtidos a partir de ${item.title.toLocaleLowerCase('pt-BR')} e validados antes da confirmação.`),
+    relation(item.id, previous, index % 3 === 0 ? 'USA REGRA DE' : 'RELACIONADO A', 64 + (index % 24), `${item.title} compartilha regras e informações com uma história próxima do mesmo fluxo.`, `Considerar os registros relacionados durante o processamento de ${item.title.toLocaleLowerCase('pt-BR')}.`),
+  ];
+});
+
+export const relations: Relation[] = [...coreRelations, ...generatedRelations];
 
 export const relationCount = (requirementId: string) => relations.filter((item) => item.source === requirementId || item.target === requirementId).length;

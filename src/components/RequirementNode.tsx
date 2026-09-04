@@ -7,6 +7,7 @@ export type RequirementNodeData = {
   state?: 'normal' | 'changed' | 'impacted' | 'confirmed' | 'dismissed';
   dimmed?: boolean;
   matched?: boolean;
+  isRoot?: boolean;
 };
 
 export type RequirementFlowNode = Node<RequirementNodeData, 'requirement'>;
@@ -15,12 +16,13 @@ export function RequirementNode({ data, selected }: NodeProps<RequirementFlowNod
   const stateClass = data.state && data.state !== 'normal' ? `node-${data.state}` : '';
 
   return (
-    <div className={`requirement-node ${stateClass} ${selected ? 'node-selected' : ''} ${data.dimmed ? 'node-dimmed' : ''} ${data.matched ? 'node-matched' : ''}`}>
+    <div className={`requirement-node ${stateClass} ${selected ? 'node-selected' : ''} ${data.dimmed ? 'node-dimmed' : ''} ${data.matched ? 'node-matched' : ''} ${data.isRoot ? 'node-root' : ''}`}>
       <Handle type="target" position={Position.Left} className="flow-handle" />
       <div className="node-kicker">
         <span>US</span>
+        {data.isRoot && data.state === 'normal' && <span className="node-state">Selecionada</span>}
         {data.state === 'changed' && <span className="node-state"><AlertCircle size={12} /> Alterado</span>}
-        {data.state === 'impacted' && <span className="node-state"><AlertCircle size={12} /> Impacto</span>}
+        {data.state === 'impacted' && <span className="node-state"><AlertCircle size={12} /> Relacionada</span>}
         {data.state === 'confirmed' && <span className="node-state"><Check size={12} /> Confirmado</span>}
       </div>
       <div className="node-title">{data.title}</div>
