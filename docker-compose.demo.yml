@@ -1,0 +1,14 @@
+# Netlify + Tailscale Funnel demo overlay.
+# Only the API binds to loopback for Funnel. PostgreSQL has no published port.
+services:
+  api:
+    ports:
+      - "127.0.0.1:${FUNNEL_API_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      WEB_ORIGIN: ${NETLIFY_SITE_ORIGIN:?Defina NETLIFY_SITE_ORIGIN em .env.demo}
+      COOKIE_SECURE: "true"
+  web:
+    profiles: ["local-web"]
+  nginx:
+    profiles: ["local-web"]

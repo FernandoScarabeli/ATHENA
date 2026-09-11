@@ -1,0 +1,35 @@
+# Development-only overlay. Keep docker-compose.yml unchanged for production.
+# Source directories are bind-mounted while dependency directories stay in
+# Docker-managed volumes, avoiding host/Alpine binary mismatches.
+services:
+  api:
+    build:
+      target: build
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    command: ["sh", "backend/api/scripts/bootstrap-db.sh", "corepack", "pnpm", "--filter", "@athena/api", "dev"]
+    volumes:
+      - ./backend/api:/app/backend/api
+      - ./packages/shared:/app/packages/shared
+      - api_node_modules:/app/backend/api/node_modules
+
+  web:
+    build:
+      target: build
+    command: ["sh", "-c", "corepack pnpm install --frozen-lockfile && exec corepack pnpm --filter @athena/web dev -- --host 0.0.0.0 --port 5173 --strictPort"]
+    environment:
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./packages/shared:/app/packages/shared
+      - web_node_modules:/app/frontend/node_modules
+
+  nginx:
+    volumes:
+      - ./infra/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  api_node_modules:
+  web_node_modules:

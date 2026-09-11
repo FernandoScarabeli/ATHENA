@@ -1,0 +1,17 @@
+[build]
+  command = "corepack pnpm install --frozen-lockfile && corepack pnpm --filter @athena/web build"
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[edge_functions]]
+  function = "api-proxy"
+  path = "/api/*"
+
+# Client-side routes are served by the React SPA. The edge function above owns
+# /api/* and forwards it to the Funnel URL configured in Netlify's environment.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

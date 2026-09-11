@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RequirementType {
+  USER_STORY
+}
+enum RequirementStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+enum RelationType {
+  RELATED_TO
+  DEPENDS_ON
+  BLOCKS
+  CONFLICTS_WITH
+}
+enum ImpactStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+enum ImpactDecision {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+enum WorkspaceRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+enum ReferenceType {
+  PROTOTYPE
+  ATTACHMENT
+}
+enum CommentThreadStatus {
+  OPEN
+  RESOLVED
+}
+enum NotificationType {
+  MENTION
+}
+
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  passwordHash String
+  createdAt DateTime @default(now())
+  memberships WorkspaceMember[]
+  activities ActivityLog[]
+  commentThreads CommentThread[] @relation("commentThreadAuthor")
+  resolvedCommentThreads CommentThread[] @relation("commentThreadResolver")
+  commentMessages CommentMessage[]
+  notifications Notification[]
+}
+model Workspace {
+  id String @id @default(uuid())
+  name String
+  createdAt DateTime @default(now())
+  members WorkspaceMember[]
+  projects Project[]
+  templates DocumentTemplate[]
+  folders RequirementFolder[]
+}
+model WorkspaceMember {
+  workspaceId String
+  userId String
+  role WorkspaceRole @default(EDITOR)
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@id([workspaceId,userId])
+}
+model Project {
+  id String @id @default(uuid())
+  workspaceId String
+  name String
+  key String
+  requirementSequence Int @default(0)
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  requirements Requirement[]
+  @@unique([workspaceId,key])
+}
+model Requirement {
+  id String @id @default(uuid())
+  projectId String
+  code String
+  type RequirementType
+  title String
+  content Json
+  status RequirementStatus @default(DRAFT)
+  folderId String
+  source String @default("MANUAL")
+  revision Int @default(1)
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  folder RequirementFolder @relation(fields:[folderId],references:[id],onDelete:Restrict)
+  criteria AcceptanceCriterion[]
+  versions RequirementVersion[]
+  outgoing RequirementRelation[] @relation("outgoing")
+  incoming RequirementRelation[] @relation("incoming")
+  impacts ImpactAnalysis[]
+  references RequirementReference[]
+  commentThreads CommentThread[]
+  @@unique([projectId,code])
+  @@index([projectId,status])
+  @@index([folderId,status])
+}
+model RequirementFolder {
+  id String @id @default(uuid())
+  workspaceId String
+  name String
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  requirements Requirement[]
+  @@unique([workspaceId,name])
+  @@index([workspaceId,updatedAt])
+}
+model AcceptanceCriterion {
+  id String @id @default(uuid())
+  requirementId String
+  text String
+  title String?
+  given String?
+  whenText String? @map("when")
+  thenText String? @map("then")
+  content Json?
+  position Int
+  requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
+  @@unique([requirementId,position])
+}
+model RequirementReference {
+  id String @id @default(uuid())
+  requirementId String
+  type ReferenceType
+  name String
+  url String
+  position Int @default(0)
+  createdAt DateTime @default(now())
+  requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
+  @@index([requirementId,type,position])
+}
+model DocumentTemplate {
+  id String @id @default(uuid())
+  workspaceId String
+  name String
+  description String?
+  content Json
+  acceptanceCriteria Json?
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  @@unique([workspaceId,name])
+  @@index([workspaceId,updatedAt])
+}
+model CommentThread {
+  id String @id @default(uuid())
+  requirementId String
+  authorId String
+  anchor Json
+  status CommentThreadStatus @default(OPEN)
+  resolvedAt DateTime?
+  resolvedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
+  author User @relation("commentThreadAuthor",fields:[authorId],references:[id],onDelete:Cascade)
+  resolvedBy User? @relation("commentThreadResolver",fields:[resolvedById],references:[id],onDelete:SetNull)
+  messages CommentMessage[]
+  @@index([requirementId,status,createdAt])
+}
+model CommentMessage {
+  id String @id @default(uuid())
+  threadId String
+  authorId String
+  body String
+  mentionedUserIds String[] @default([])
+  createdAt DateTime @default(now())
+  thread CommentThread @relation(fields:[threadId],references:[id],onDelete:Cascade)
+  author User @relation(fields:[authorId],references:[id],onDelete:Cascade)
+  notifications Notification[]
+  @@index([threadId,createdAt])
+}
+model Notification {
+  id String @id @default(uuid())
+  userId String
+  type NotificationType
+  commentMessageId String?
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  commentMessage CommentMessage? @relation(fields:[commentMessageId],references:[id],onDelete:Cascade)
+  @@index([userId,readAt,createdAt])
+}
+model RequirementVersion {
+  id String @id @default(uuid())
+  requirementId String
+  revision Int
+  snapshot Json
+  createdAt DateTime @default(now())
+  requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
+  @@unique([requirementId,revision])
+}
+model RequirementRelation {
+  id String @id @default(uuid())
+  sourceId String
+  targetId String
+  type RelationType
+  createdAt DateTime @default(now())
+  source Requirement @relation("outgoing",fields:[sourceId],references:[id],onDelete:Cascade)
+  target Requirement @relation("incoming",fields:[targetId],references:[id],onDelete:Cascade)
+  @@unique([sourceId,targetId,type])
+}
+model ActivityLog {
+  id String @id @default(uuid())
+  userId String
+  projectId String
+  action String
+  entityId String
+  metadata Json?
+  createdAt DateTime @default(now())
+  user User @relation(fields:[userId],references:[id])
+  @@index([projectId,createdAt])
+}
+model ImpactAnalysis {
+  id String @id @default(uuid())
+  requirementId String
+  status ImpactStatus @default(PENDING)
+  error String?
+  createdAt DateTime @default(now())
+  requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
+  items ImpactItem[]
+}
+model ImpactItem {
+  id String @id @default(uuid())
+  analysisId String
+  targetRequirementId String
+  severity String
+  rationale String
+  decision ImpactDecision @default(PENDING)
+  suggestedRelationType RelationType?
+  analysis ImpactAnalysis @relation(fields:[analysisId],references:[id],onDelete:Cascade)
+  @@unique([analysisId,targetRequirementId])
+}

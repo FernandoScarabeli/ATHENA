@@ -1,0 +1,23 @@
+# Dependencies and generated output
+/node_modules/
+**/node_modules/
+/dist/
+**/dist/
+*.tsbuildinfo
+/coverage/
+*.log
+
+# Secrets and local runtime state
+/.env
+/.env.*
+!/.env.example
+!/.env.demo.example
+/backend/api/prisma/dev.db
+
+# The legacy prototype remains only in legacy-requisitograph history. Its
+# Defesa Agropecuária source data, fixtures and application code are not part
+# of ATHENA's clean main baseline.
+/RequisitoGraph/
+
+# External orchestration checkout; not part of ATHENA.
+/symphony/
