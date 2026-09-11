@@ -11,6 +11,7 @@
     "demo:on": "sh scripts/demo-on.sh",
     "demo:off": "sh scripts/demo-off.sh",
     "demo:status": "sh scripts/demo-status.sh",
+    "deploy": "./deploy/deploy.sh",
     "build": "corepack pnpm -r build",
     "test": "corepack pnpm -r test",
     "lint": "corepack pnpm -r lint",
