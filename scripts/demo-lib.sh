@@ -10,6 +10,10 @@ athena_demo_load_env() {
   fi
   set -a
   # shellcheck disable=SC1090
+  case "$ATHENA_DEMO_ENV_FILE" in
+    /*) ;;
+    *) ATHENA_DEMO_ENV_FILE="./$ATHENA_DEMO_ENV_FILE" ;;
+  esac
   . "$ATHENA_DEMO_ENV_FILE"
   set +a
   : "${NETLIFY_SITE_ORIGIN:?Defina NETLIFY_SITE_ORIGIN em .env.demo}"
