@@ -193,10 +193,10 @@ export class RequirementsService {
   private commentInclude = { author:{select:{id:true,name:true,email:true}}, resolvedBy:{select:{id:true,name:true}}, messages:{orderBy:{createdAt:'asc' as const},include:{author:{select:{id:true,name:true,email:true}}}} };
   async comments(userId:string,requirementId:string) { await this.requirement(userId,requirementId); return this.prisma.commentThread.findMany({where:{requirementId},orderBy:{createdAt:'asc'},include:this.commentInclude}); }
   async createComment(userId:string,requirementId:string,dto:CreateCommentDto) {
-    const requirement=await this.requirement(userId,requirementId,commentRoles); this.assertAnchor(dto.anchor);
+    const requirement=await this.requirement(userId,requirementId,commentRoles); if(dto.anchor) this.assertAnchor(dto.anchor);
     const project=await this.project(userId,requirement.projectId); const mentions=await this.assertMentionMembers(project.workspaceId,dto.mentionedUserIds??[],userId);
     try { return await this.prisma.$transaction(async tx=>{
-        const thread=await tx.commentThread.create({data:{requirementId,authorId:userId,anchor:dto.anchor as Prisma.InputJsonValue,messages:{create:{authorId:userId,body:dto.body,mentionedUserIds:mentions}}},include:{messages:true}});
+        const thread=await tx.commentThread.create({data:{requirementId,authorId:userId,...(dto.anchor ? {anchor:dto.anchor as Prisma.InputJsonValue} : {}),messages:{create:{authorId:userId,body:dto.body,mentionedUserIds:mentions}}},include:{messages:true}});
         if(mentions.length) await tx.notification.createMany({data:mentions.map(mentionedUserId=>({userId:mentionedUserId,type:'MENTION',commentMessageId:thread.messages[0].id}))});
         return tx.commentThread.findUniqueOrThrow({where:{id:thread.id},include:this.commentInclude});
       }); } catch (error) { this.logger.error(`comment creation failed requirement=${requirementId} user=${userId}`, error instanceof Error ? error.stack : undefined); throw error; }

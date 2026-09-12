@@ -1,4 +1,6 @@
 import { CommandProps, Extension } from '@tiptap/core';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 export const FONT_FAMILIES = ['Inter', 'Arial', 'Georgia', 'Times New Roman', 'Verdana', 'Courier New'] as const;
 export const FONT_SIZES = ['10px', '11px', '12px', '14px', '16px', '18px', '24px', '32px'] as const;
@@ -75,5 +77,34 @@ export const TextFormatting = Extension.create({
       setFontSize: (fontSize: string) => ({ commands, editor }: CommandProps) => commands.setMark('textStyle', { ...editor.getAttributes('textStyle'), fontSize }),
       unsetFontSize: () => ({ commands, editor }: CommandProps) => commands.setMark('textStyle', { ...editor.getAttributes('textStyle'), fontSize: null }),
     };
+  },
+});
+
+export interface CommentHighlightAnchor { id: string; from: number; to: number; active?: boolean }
+export const commentHighlightsKey = new PluginKey<DecorationSet>('commentHighlights');
+
+function decorationsFor(doc: Parameters<typeof DecorationSet.create>[0], anchors: CommentHighlightAnchor[]) {
+  const decorations = anchors.flatMap(({ id, from, to, active }) => {
+    const start = Math.max(1, Math.min(from, doc.content.size));
+    const end = Math.max(start, Math.min(to, doc.content.size));
+    return start < end ? [Decoration.inline(start, end, { class: `comment-highlight${active ? ' comment-highlight-active' : ''}`, 'data-comment-id': id })] : [];
+  });
+  return DecorationSet.create(doc, decorations);
+}
+
+export const CommentHighlights = Extension.create({
+  name: 'commentHighlights',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: commentHighlightsKey,
+      state: {
+        init: (_, state) => DecorationSet.empty,
+        apply: (transaction, current) => {
+          const anchors = transaction.getMeta(commentHighlightsKey) as CommentHighlightAnchor[] | undefined;
+          return anchors ? decorationsFor(transaction.doc, anchors) : current.map(transaction.mapping, transaction.doc);
+        },
+      },
+      props: { decorations: state => commentHighlightsKey.getState(state) },
+    })];
   },
 });

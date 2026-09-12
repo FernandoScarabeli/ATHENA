@@ -170,7 +170,7 @@ model CommentThread {
   id String @id @default(uuid())
   requirementId String
   authorId String
-  anchor Json
+  anchor Json?
   status CommentThreadStatus @default(OPEN)
   resolvedAt DateTime?
   resolvedById String?
