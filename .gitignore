@@ -21,3 +21,8 @@
 
 # External orchestration checkout; not part of ATHENA.
 /symphony/
+
+# Local deploy state and database dumps
+/deploy/.env.deploy
+/deploy/.reset-db.sha256
+/deploy/backups/

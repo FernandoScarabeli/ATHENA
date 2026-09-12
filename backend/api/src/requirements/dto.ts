@@ -109,5 +109,5 @@ export class UpdateTemplateDto {
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(() => CriterionDto) acceptanceCriteria?: CriterionDto[];
 }
 export class CreateReferenceDto { @IsEnum(ReferenceTypeDto) type!:ReferenceTypeDto; @IsString() @MaxLength(240) name!:string; @IsString() @MaxLength(2000) url!:string; @IsOptional() @IsInt() @Min(0) position?:number; }
-export class CreateCommentDto { @IsString() @MaxLength(5000) body!:string; @IsObject() anchor!: Record<string, unknown>; @IsOptional() @IsArray() @ArrayMaxSize(30) @IsUUID('4',{each:true}) mentionedUserIds?: string[]; }
+export class CreateCommentDto { @IsString() @MaxLength(5000) body!:string; @IsOptional() @IsObject() anchor?: Record<string, unknown>; @IsOptional() @IsArray() @ArrayMaxSize(30) @IsUUID('4',{each:true}) mentionedUserIds?: string[]; }
 export class CreateCommentReplyDto { @IsString() @MaxLength(5000) body!:string; @IsOptional() @IsArray() @ArrayMaxSize(30) @IsUUID('4',{each:true}) mentionedUserIds?: string[]; }

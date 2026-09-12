@@ -40,6 +40,16 @@ Instale as dependências uma vez:
 corepack pnpm install
 ```
 
+## Operação central
+
+Para operações locais de Docker, demo, logs, backups e restore, use o menu:
+
+```bash
+./deploy/deploy.sh
+```
+
+O guia e as proteções do reset estão em [deploy/README.md](deploy/README.md).
+
 ## Configuração
 
 Crie a configuração local a partir do exemplo:

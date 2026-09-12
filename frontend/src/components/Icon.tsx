@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  ArrowLeft,
   Folder,
   Filter,
   GitBranch,
@@ -15,12 +16,13 @@ import {
   Check,
   MessageCircle,
   User,
+  Users,
   X,
   type LucideIcon,
   type LucideProps,
 } from 'lucide-react';
 
-type IconName = 'branch' | 'map' | 'list' | 'plus' | 'search' | 'logout' | 'close' | 'link' | 'user' | 'chevron' | 'filter' | 'refresh' | 'folder' | 'settings' | 'bell' | 'check' | 'message';
+type IconName = 'branch' | 'map' | 'list' | 'plus' | 'search' | 'logout' | 'close' | 'link' | 'user' | 'users' | 'chevron' | 'back' | 'filter' | 'refresh' | 'folder' | 'settings' | 'bell' | 'check' | 'message';
 
 const icons: Record<IconName, LucideIcon> = {
   branch: GitBranch,
@@ -32,7 +34,9 @@ const icons: Record<IconName, LucideIcon> = {
   close: X,
   link: Link,
   user: User,
+  users: Users,
   chevron: ChevronRight,
+  back: ArrowLeft,
   folder: Folder,
   settings: Settings,
   bell: Bell,

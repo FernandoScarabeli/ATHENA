@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Brand } from '../../components/Brand';
-import { Icon } from '../../components/Icon';
+import SignInForm from '../../components/ui/sign-in-form';
 import { api } from '../../lib/api';
 import type { User } from '../../lib/types';
 
@@ -26,10 +26,9 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) =>
 
   return (
     <main className="auth-page">
-      <header className="auth-nav"><Brand/><span className="auth-badge">Requirements hub</span></header>
+      <header className="auth-nav"><Brand /></header>
       <div className="auth-layout">
         <section className="auth-intro">
-          <span className="eyebrow"><Icon name="branch" size={14}/> Rastreabilidade de ponta a ponta</span>
           <h1>Decisões claras começam com requisitos conectados.</h1>
           <p>Organize requisitos, acompanhe versões e entenda relações no mesmo espaço de trabalho.</p>
           <div className="auth-preview" aria-hidden="true">
@@ -37,17 +36,19 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) =>
             <div className="preview-canvas"><div className="preview-node preview-node-main"><small/><strong/></div><div className="preview-line line-a"/><div className="preview-line line-b"/><div className="preview-node preview-node-a"><small/><strong/></div><div className="preview-node preview-node-b"><small/><strong/></div></div>
           </div>
         </section>
-        <form className="auth-card" onSubmit={submit}>
-          <p className="section-kicker">Acesso seguro</p>
-          <h2>{register ? 'Criar sua conta' : 'Entrar no ATHENA'}</h2>
-          <p className="form-lead">{register ? 'Comece criando seu acesso.' : 'Use seus dados para continuar.'}</p>
-          {register && <label>Nome<input autoComplete="name" required minLength={2} value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome"/></label>}
-          <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com"/></label>
-          <label>Senha<input type="password" autoComplete={register ? 'new-password' : 'current-password'} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo de 8 caracteres"/></label>
-          {mutation.error && <div className="inline-error" role="alert">{mutation.error.message}</div>}
-          <button className="primary-button auth-submit" disabled={mutation.isPending}>{mutation.isPending ? 'Aguarde…' : register ? 'Criar conta' : 'Entrar'}<Icon name="chevron" size={15}/></button>
-          <button className="text-button" type="button" onClick={() => { setRegister(!register); mutation.reset(); }}>{register ? 'Já tenho uma conta' : 'Criar uma conta'}</button>
-        </form>
+        <SignInForm
+          register={register}
+          name={name}
+          email={email}
+          password={password}
+          isPending={mutation.isPending}
+          error={mutation.error?.message}
+          onSubmit={submit}
+          onNameChange={setName}
+          onEmailChange={setEmail}
+          onPasswordChange={setPassword}
+          onToggleMode={() => { setRegister(!register); mutation.reset(); }}
+        />
       </div>
     </main>
   );

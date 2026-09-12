@@ -16,7 +16,7 @@ import { Icon } from '../../components/Icon';
 import { api, ApiError } from '../../lib/api';
 import type { AcceptanceCriterion, CommentThread, Requirement, RequirementFolder, RequirementReference, User, Workspace, WorkspaceParticipant, WorkspaceRole } from '../../lib/types';
 import { isRequirementDirty, isSaveShortcut, requirementUpdatePayload, type RequirementDraft } from './requirementEditorModel';
-import { TextFormatting } from './richTextExtensions';
+import { CommentHighlights, TextFormatting, commentHighlightsKey, type CommentHighlightAnchor } from './richTextExtensions';
 import { DocumentToolbar } from './DocumentToolbar';
 import { DocumentHeader, type DocumentPanel } from './DocumentHeader';
 import { DocumentDetails, DocumentSidePanel } from './DocumentPanel';
@@ -43,6 +43,8 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
   const submittedDraft = useRef<RequirementDraft | null>(null);
   const [selection, setSelection] = useState<{ from: number; to: number; quote: string } | null>(null);
   const [commentBody, setCommentBody] = useState('');
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [contentRequirementId, setContentRequirementId] = useState<string | null>(null);
   const loadedRequirement = useRef<string | null>(null);
   const role = workspace.role ?? 'EDITOR';
   const canEdit = role === 'OWNER' || role === 'EDITOR';
@@ -56,7 +58,7 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
   const editor = useEditor({
     editable: canEdit,
     editorProps: { attributes: { 'aria-label': 'Conteúdo do documento', role: 'textbox', 'aria-multiline': 'true' } },
-    extensions: [StarterKit, TextStyle, TextFormatting, Underline, Link.configure({ protocols: ['http', 'https', 'mailto'], openOnClick: false }), TaskList, TaskItem.configure({ nested: true }), Table.configure({ resizable: true }), TableRow, TableHeader, TableCell, Placeholder.configure({ placeholder: 'Comece a documentar o requisito…' })],
+    extensions: [StarterKit, TextStyle, TextFormatting, CommentHighlights, Underline, Link.configure({ protocols: ['http', 'https', 'mailto'], openOnClick: false }), TaskList, TaskItem.configure({ nested: true }), Table.configure({ resizable: true }), TableRow, TableHeader, TableCell, Placeholder.configure({ placeholder: 'Comece a documentar o requisito…' })],
     content: emptyDoc,
     onUpdate: () => setEditorTick((value) => value + 1),
     onSelectionUpdate: ({ editor: instance }) => {
@@ -68,12 +70,35 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
   });
   useEffect(() => { editor?.setEditable(canEdit); }, [canEdit, editor]);
   useEffect(() => {
+    if (!editor || contentRequirementId !== requirementId) return;
+    const anchors: CommentHighlightAnchor[] = (comments.data ?? []).flatMap((thread) => {
+      const anchor = thread.anchor;
+      return thread.status === 'OPEN' && anchor && Number.isInteger(anchor.from) && Number.isInteger(anchor.to) ? [{ id: thread.id, from: anchor.from!, to: anchor.to!, active: thread.id === activeCommentId }] : [];
+    });
+    editor.view.dispatch(editor.state.tr.setMeta(commentHighlightsKey, anchors));
+  }, [activeCommentId, comments.data, contentRequirementId, editor, requirementId]);
+  useEffect(() => {
+    if (!editor) return;
+    const openThread = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const commentId = target.closest<HTMLElement>('.comment-highlight[data-comment-id]')?.dataset.commentId;
+      if (!commentId) return;
+      event.preventDefault();
+      setPanel('comments');
+      setActiveCommentId(commentId);
+    };
+    editor.view.dom.addEventListener('click', openThread);
+    return () => editor.view.dom.removeEventListener('click', openThread);
+  }, [editor]);
+  useEffect(() => {
     if (!editor || !requirement || loadedRequirement.current === requirementId) return;
     loadedRequirement.current = requirementId;
     setCriteriaOpen(requirement.criteria.length > 0);
     setForm(requirement); setCriteria(requirement.criteria.map((criterion, position) => ({ ...criterion, position })));
     editor.commands.setContent(requirement.content ?? emptyDoc);
     setBase({ ...requirement, content: editor.getJSON() });
+    setContentRequirementId(requirementId);
   }, [editor, requirement, requirementId]);
   useEffect(() => () => { loadedRequirement.current = null; }, [requirementId]);
   const draft = useMemo(() => ({ title: String(form.title ?? ''), status: form.status as Requirement['status'], folderId: String(form.folderId ?? requirement?.folderId ?? ''), criteria, content: editor?.getJSON() ?? emptyDoc }), [criteria, editor, editorTick, form, requirement?.folderId]);
@@ -113,7 +138,7 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
     save.mutate(requirementUpdatePayload(base, draft));
   } };
   const archive = useMutation({ mutationFn: () => api(`/requirements/${requirementId}`, { method: 'DELETE' }), onSuccess: () => { client.invalidateQueries({ queryKey: ['requirements', projectId] }); client.invalidateQueries({ queryKey: ['graph', projectId] }); onClose(); } });
-  const createComment = useMutation({ mutationFn: () => api<CommentThread>(`/requirements/${requirementId}/comments`, { method: 'POST', body: JSON.stringify({ body: commentBody.trim(), anchor: selection, mentionedUserIds: (members.data ?? []).filter((member) => commentBody.includes(`@${member.name}`)).map((member) => member.id) }) }), onSuccess: () => { setCommentBody(''); setSelection(null); client.invalidateQueries({ queryKey: ['comments', requirementId] }); client.invalidateQueries({ queryKey: ['notifications'] }); } });
+  const createComment = useMutation({ mutationFn: () => api<CommentThread>(`/requirements/${requirementId}/comments`, { method: 'POST', body: JSON.stringify({ body: commentBody.trim(), anchor: selection ?? undefined, mentionedUserIds: (members.data ?? []).filter((member) => commentBody.includes(`@${member.name}`)).map((member) => member.id) }) }), onSuccess: () => { setCommentBody(''); setSelection(null); client.invalidateQueries({ queryKey: ['comments', requirementId] }); client.invalidateQueries({ queryKey: ['notifications'] }); } });
   const setThreadStatus = useMutation({ mutationFn: ({ id, status }: { id: string; status: 'OPEN' | 'RESOLVED' }) => api(`/comments/${id}/${status === 'RESOLVED' ? 'resolve' : 'reopen'}`, { method: 'PATCH' }), onSuccess: () => client.invalidateQueries({ queryKey: ['comments', requirementId] }) });
   const addReply = useMutation({ mutationFn: ({ id, body }: { id: string; body: string }) => api(`/comments/${id}/replies`, { method: 'POST', body: JSON.stringify({ body }) }), onSuccess: () => client.invalidateQueries({ queryKey: ['comments', requirementId] }) });
   const removeReference = useMutation({ mutationFn: (id: string) => api(`/requirements/${requirementId}/references/${id}`, { method: 'DELETE' }), onSuccess: () => client.invalidateQueries({ queryKey: ['references', requirementId] }) });
@@ -177,16 +202,52 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
           </div>
         </section>
       </div>
-      {panel && <DocumentSidePanel title={panel === 'details' ? 'Detalhes da US' : 'Comentários'} onClose={() => setPanel(null)}>
+      {panel && <DocumentSidePanel title={panel === 'details' ? 'Detalhes da US' : 'Comentários'} onClose={() => { setPanel(null); setActiveCommentId(null); }}>
         {panel === 'details' ? <DocumentDetails status={String(form.status ?? 'DRAFT')} folderId={String(form.folderId ?? requirement.folderId)} folders={folders.data ?? []} editable={canEdit} onFolder={id => set('folderId', id)}/> :
-          <CommentSidebar threads={comments.data ?? []} role={role} user={user} members={members.data ?? []} canComment={canComment} selection={selection} body={commentBody} onBody={setCommentBody} onCreate={() => createComment.mutate()} pending={createComment.isPending} createError={createComment.error} onStatus={(id, status) => setThreadStatus.mutate({ id, status })} onReply={(id, body) => addReply.mutate({ id, body })}/>}
+          <CommentSidebar threads={comments.data ?? []} role={role} user={user} members={members.data ?? []} canComment={canComment} selection={selection} body={commentBody} activeCommentId={activeCommentId} onActiveComment={setActiveCommentId} onBody={setCommentBody} onCreate={() => createComment.mutate()} pending={createComment.isPending} createError={createComment.error} onStatus={(id, status) => setThreadStatus.mutate({ id, status })} onReply={(id, body) => addReply.mutate({ id, body })}/>}
       </DocumentSidePanel>}
     </div>
     {conflict && <ConflictDialog conflict={conflict} onServer={() => { setForm(conflict); setCriteria(conflict.criteria.map((criterion, position) => ({ ...criterion, position }))); setCriteriaOpen(conflict.criteria.length > 0); editor?.commands.setContent(conflict.content); setBase({ ...conflict, content: editor?.getJSON() ?? conflict.content }); setConflict(null); save.reset(); }} onMine={() => { setBase(conflict); setConflict(null); save.reset(); }}/>}</main>;
 }
 
 function CriterionCard({ criterion, index, editable, onChange, onRemove }: { criterion: AcceptanceCriterion; index: number; editable: boolean; onChange: (index: number, key: keyof AcceptanceCriterion, value: string) => void; onRemove: () => void }) { return <article className="criterion-card"><header><span>CA{String(index + 1).padStart(2, '0')}</span>{editable && <button className="text-button" onClick={onRemove}>Remover</button>}</header><input disabled={!editable} value={criterion.title ?? ''} onChange={(event) => onChange(index, 'title', event.target.value)} aria-label={`Título do critério ${index + 1}`} placeholder="Título do critério"/><div className="gherkin-fields"><label>Dado<input disabled={!editable} value={criterion.given ?? ''} onChange={(event) => onChange(index, 'given', event.target.value)} placeholder="o contexto"/></label><label>Quando<input disabled={!editable} value={criterion.whenText ?? ''} onChange={(event) => onChange(index, 'whenText', event.target.value)} placeholder="a ação ocorre"/></label><label>Então<input disabled={!editable} value={criterion.thenText ?? criterion.text ?? ''} onChange={(event) => onChange(index, 'thenText', event.target.value)} placeholder="o resultado esperado"/></label></div></article>; }
-function CommentSidebar({ threads, role, user, members, selection, body, onBody, onCreate, pending, createError, onStatus, onReply }: { threads: CommentThread[]; role: WorkspaceRole; user: User; members: WorkspaceParticipant[]; canComment: boolean; selection: { quote: string } | null; body: string; onBody: (body: string) => void; onCreate: () => void; pending: boolean; createError: Error | null; onStatus: (id: string, status: 'OPEN' | 'RESOLVED') => void; onReply: (id: string, body: string) => void }) { return <aside className="comments-sidebar"><header><div><p className="section-kicker">Colaboração</p><h2>Comentários</h2></div><span>{threads.filter((thread) => thread.status === 'OPEN').length}</span></header><section className="new-comment"><small>{selection ? <>Comentando: “{selection.quote}”</> : 'Selecione um trecho do documento para comentar.'}</small><textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder="Escreva um comentário. Use @nome para mencionar alguém." disabled={!selection}/>{members.filter(member => member.id !== user.id).slice(0, 5).map(member => <button key={member.id} type="button" onClick={() => onBody(`${body}${body && !body.endsWith(' ') ? ' ' : ''}@${member.name} `)}>@{member.name}</button>)}<button className="primary-button" disabled={!selection || !body.trim() || pending} onClick={onCreate}>{pending ? 'Enviando…' : 'Comentar'}</button>{createError && <div className="inline-error">{createError.message}</div>}</section><div className="thread-list">{threads.length ? threads.map(thread => <CommentItem key={thread.id} thread={thread} user={user} role={role} onStatus={onStatus} onReply={onReply}/>) : <p className="empty-copy">Ainda não há comentários neste documento.</p>}</div></aside>; }
-function CommentItem({ thread, user, role, onStatus, onReply }: { thread: CommentThread; user: User; role: WorkspaceRole; onStatus: (id: string, status: 'OPEN' | 'RESOLVED') => void; onReply: (id: string, body: string) => void }) { const [reply, setReply] = useState(''); const canResolve = thread.author.id === user.id || role === 'OWNER' || role === 'EDITOR'; const quote = thread.anchor?.quote ?? thread.quote; return <article className={`comment-thread ${thread.status.toLowerCase()}`}><header><strong>{thread.author.name}</strong><span>{thread.status === 'OPEN' ? 'Aberto' : 'Resolvido'}</span></header>{quote && <blockquote>“{quote}”</blockquote>}{thread.messages.map(message => <div className="comment-message" key={message.id}><strong>{message.author.name}</strong><p>{message.body}</p></div>)}<footer>{canResolve && <button className="text-button" onClick={() => onStatus(thread.id, thread.status === 'OPEN' ? 'RESOLVED' : 'OPEN')}>{thread.status === 'OPEN' ? 'Resolver' : 'Reabrir'}</button>}</footer>{thread.status === 'OPEN' && <div className="reply-box"><input value={reply} onChange={event => setReply(event.target.value)} placeholder="Responder"/><button disabled={!reply.trim()} onClick={() => { onReply(thread.id, reply); setReply(''); }}>↑</button></div>}</article>; }
+function CommentSidebar({ threads, role, user, members, selection, body, activeCommentId, onActiveComment, onBody, onCreate, pending, createError, onStatus, onReply }: { threads: CommentThread[]; role: WorkspaceRole; user: User; members: WorkspaceParticipant[]; canComment: boolean; selection: { quote: string } | null; body: string; activeCommentId: string | null; onActiveComment: (id: string | null) => void; onBody: (body: string) => void; onCreate: () => void; pending: boolean; createError: Error | null; onStatus: (id: string, status: 'OPEN' | 'RESOLVED') => void; onReply: (id: string, body: string) => void }) {
+  const [tab, setTab] = useState<'OPEN' | 'RESOLVED'>('OPEN');
+  const openThreads = threads.filter((thread) => thread.status === 'OPEN');
+  const resolvedThreads = threads.filter((thread) => thread.status === 'RESOLVED');
+  const visibleThreads = tab === 'OPEN' ? openThreads : resolvedThreads;
+  useEffect(() => {
+    if (!activeCommentId) return;
+    setTab('OPEN');
+    requestAnimationFrame(() => document.getElementById(`comment-thread-${activeCommentId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }, [activeCommentId]);
+  return <aside className="comments-sidebar">
+    <section className="new-comment" aria-label="Novo comentário">
+      {selection && <p className="selected-comment-quote" title={selection.quote}>“{selection.quote}”</p>}
+      <textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder="Escreva um comentário… Use @nome para mencionar."/>
+      <div className="comment-composer-actions"><div className="mention-list">{members.filter(member => member.id !== user.id).slice(0, 3).map(member => <button key={member.id} className="mention-chip" type="button" onClick={() => onBody(`${body}${body && !body.endsWith(' ') ? ' ' : ''}@${member.name} `)}>@{member.name}</button>)}</div><button className="primary-button" disabled={!body.trim() || pending} onClick={onCreate}>{pending ? 'Enviando…' : 'Comentar'}</button></div>
+      {createError && <div className="inline-error">{createError.message}</div>}
+    </section>
+    <div className="comment-tabs" role="tablist" aria-label="Status dos comentários">
+      <button type="button" role="tab" aria-selected={tab === 'OPEN'} className={tab === 'OPEN' ? 'active' : ''} onClick={() => setTab('OPEN')}>Abertos <span>{openThreads.length}</span></button>
+      <button type="button" role="tab" aria-selected={tab === 'RESOLVED'} className={tab === 'RESOLVED' ? 'active' : ''} onClick={() => setTab('RESOLVED')}>Resolvidos <span>{resolvedThreads.length}</span></button>
+    </div>
+    <div className="thread-list" role="tabpanel">{visibleThreads.length ? visibleThreads.map(thread => <CommentItem key={thread.id} thread={thread} user={user} role={role} active={activeCommentId === thread.id} onActive={() => onActiveComment(thread.id)} onInactive={() => onActiveComment(null)} onStatus={onStatus} onReply={onReply}/>) : <p className="empty-copy">{tab === 'OPEN' ? 'Nenhum comentário aberto.' : 'Nenhum comentário resolvido.'}</p>}</div>
+  </aside>;
+}
+function CommentItem({ thread, user, role, active, onActive, onInactive, onStatus, onReply }: { thread: CommentThread; user: User; role: WorkspaceRole; active: boolean; onActive: () => void; onInactive: () => void; onStatus: (id: string, status: 'OPEN' | 'RESOLVED') => void; onReply: (id: string, body: string) => void }) {
+  const [reply, setReply] = useState('');
+  const canResolve = thread.author.id === user.id || role === 'OWNER' || role === 'EDITOR';
+  const quote = thread.anchor?.quote ?? thread.quote;
+  const isOpen = thread.status === 'OPEN';
+  const sendReply = () => { if (!reply.trim()) return; onReply(thread.id, reply); setReply(''); };
+  return <article id={`comment-thread-${thread.id}`} className={`comment-thread ${thread.status.toLowerCase()} ${active ? 'active' : ''}`} onMouseEnter={onActive} onMouseLeave={onInactive}>
+    <header><strong>{thread.author.name}</strong>{isOpen && canResolve && <button className="resolve-comment" type="button" onClick={() => onStatus(thread.id, 'RESOLVED')}>Fechar</button>}</header>
+    {quote && <p className="thread-quote" title={quote}>“{quote}”</p>}
+    <div className="comment-conversation">{thread.messages.map((message, index) => <div className="comment-message" key={message.id}>{index > 0 && message.author.id !== thread.messages[index - 1].author.id && <strong>{message.author.name}</strong>}<p>{message.body}</p></div>)}</div>
+    {isOpen && <div className="reply-box"><input value={reply} onChange={event => setReply(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') sendReply(); }} placeholder="Adicionar uma resposta…" aria-label={`Responder comentário de ${thread.author.name}`}/><button type="button" disabled={!reply.trim()} onClick={sendReply} aria-label="Enviar resposta">↑</button></div>}
+    {!isOpen && canResolve && <footer><button className="text-button" type="button" onClick={() => onStatus(thread.id, 'OPEN')}>Reabrir comentário</button></footer>}
+  </article>;
+}
 function ConflictDialog({ conflict, onServer, onMine }: { conflict: Requirement; onServer: () => void; onMine: () => void }) { return <div className="modal-backdrop"><section className="modal-card"><p className="section-kicker">Conflito de revisão</p><h2>Uma versão mais recente foi salva</h2><p className="form-lead">A revisão atual é v{conflict.revision}. Sua edição continua preservada nesta tela.</p><div className="conflict-actions"><button className="secondary-button" onClick={onServer}>Usar versão atual</button><button className="primary-button" onClick={onMine}>Manter minha edição</button></div></section></div>; }
 function roleLabel(role: WorkspaceRole) { return ({ OWNER: 'proprietário', EDITOR: 'editor', VIEWER: 'leitor' } as const)[role]; }

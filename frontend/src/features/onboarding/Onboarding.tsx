@@ -84,7 +84,7 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
   if (workspaces.isLoading) return <StatePage loading title="Carregando seus workspaces"/>;
   if (workspaces.isError) return <StatePage title="Não foi possível carregar seus workspaces" message={workspaces.error.message} onRetry={() => workspaces.refetch()} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
-  if (workspace && project) return <ProjectWorkspace user={user} workspace={workspace} project={project} onChangeContext={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); }} onCreateWorkspace={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(true); }} onCreateProject={() => { setProjectId(null); setCreatingProject(true); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
+  if (workspace && project) return <ProjectWorkspace user={user} workspace={workspace} project={project} onChangeContext={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); }} onBrowseWorkspaces={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(false); setCreatingProject(false); }} onCreateWorkspace={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(true); }} onCreateProject={() => { setProjectId(null); setCreatingProject(true); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
   const workspaceList = workspaces.data ?? [];
   if (workspaceList.length > 0 && !workspace && !creatingWorkspace) {
@@ -96,6 +96,7 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
       onSelect={(id) => { setWorkspaceId(id); setProjectId(null); setCreatingProject(false); }}
       onCreate={() => { createWorkspace.reset(); setCreatingWorkspace(true); }}
       createLabel="Criar novo workspace"
+      step={1}
       onLogout={() => logout.mutate()}
       logoutPending={logout.isPending}
     />;
@@ -110,6 +111,7 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
       onSelect={setProjectId}
       onCreate={() => { createProject.reset(); setCreatingProject(true); }}
       createLabel="Criar novo projeto"
+      step={2}
       onBack={() => { setWorkspaceId(null); setProjectId(null); }}
       onLogout={() => logout.mutate()}
       logoutPending={logout.isPending}
@@ -123,11 +125,12 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
   };
   const mutation = isWorkspaceStep ? createWorkspace : createProject;
 
+  const currentStep = isWorkspaceStep ? 1 : 2;
   return (
     <main className="onboarding-page">
       <header className="auth-nav"><Brand/><button className="secondary-button" onClick={() => logout.mutate()} disabled={logout.isPending}><Icon name="logout" size={14}/> Sair</button></header>
       <section className="onboarding-card">
-        <div className="step-indicator"><span className="done">1</span><i/><span className={!isWorkspaceStep ? 'active' : ''}>2</span></div>
+        <ProgressSteps current={currentStep}/>
         <p className="section-kicker">{isWorkspaceStep ? 'Novo workspace' : 'Novo projeto'}</p>
         <h1>{isWorkspaceStep ? `Crie seu workspace` : 'Crie um projeto'}</h1>
         <p>{isWorkspaceStep ? 'O workspace reúne pessoas e projetos da sua organização.' : `O projeto ficará dentro de ${workspace?.name}.`}</p>
@@ -147,10 +150,19 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
 
 interface SelectionItem { id: string; badge: string; title: string; detail: string }
 
-function SelectionPage({ kicker, title, description, items, onSelect, onCreate, createLabel, onBack, onLogout, logoutPending }: { kicker: string; title: string; description: string; items: SelectionItem[]; onSelect: (id: string) => void; onCreate: () => void; createLabel: string; onBack?: () => void; onLogout: () => void; logoutPending: boolean }) {
+function ProgressSteps({ current }: { current: 1 | 2 }) {
+  return <ol className="context-progress" aria-label={`Etapa ${current} de 2`}>
+    <li className={current >= 1 ? 'complete' : ''}><span>1</span><strong>Workspace</strong></li>
+    <li aria-hidden="true"/>
+    <li className={current === 2 ? 'current' : ''}><span>2</span><strong>Projeto</strong></li>
+  </ol>;
+}
+
+function SelectionPage({ kicker, title, description, items, onSelect, onCreate, createLabel, step, onBack, onLogout, logoutPending }: { kicker: string; title: string; description: string; items: SelectionItem[]; onSelect: (id: string) => void; onCreate: () => void; createLabel: string; step: 1 | 2; onBack?: () => void; onLogout: () => void; logoutPending: boolean }) {
   return <main className="onboarding-page">
     <header className="auth-nav"><Brand/><button className="secondary-button" onClick={onLogout} disabled={logoutPending}><Icon name="logout" size={14}/> Sair</button></header>
     <section className="onboarding-card selection-card">
+      <ProgressSteps current={step}/>
       <p className="section-kicker">{kicker}</p>
       <h1>{title}</h1>
       <p>{description}</p>
@@ -162,7 +174,7 @@ function SelectionPage({ kicker, title, description, items, onSelect, onCreate, 
         </button>)}
       </div>
       <div className="selection-actions">
-        {onBack && <button className="text-button" onClick={onBack}>Trocar workspace</button>}
+        {onBack && <button type="button" className="secondary-button selection-back" onClick={onBack}><Icon name="back" size={14}/> Voltar</button>}
         <button className="secondary-button" onClick={onCreate}><Icon name="plus" size={14}/>{createLabel}</button>
       </div>
     </section>
