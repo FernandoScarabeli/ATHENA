@@ -1,0 +1,5 @@
+# Overlay exclusivo do servidor Windows. Ele não é usado pelos comandos de
+# desenvolvimento; inclua-o somente na stack de deploy/demonstração.
+services:
+  ollama:
+    gpus: all

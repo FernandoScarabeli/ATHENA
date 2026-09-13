@@ -31,6 +31,22 @@ enum ImpactDecision {
   CONFIRMED
   DISMISSED
 }
+enum AiSuggestionType {
+  RELATION
+  REFERENCE
+}
+enum AiSuggestionStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+enum DependencyAnalysisStatus {
+  QUEUED
+  READING
+  PERSISTING
+  COMPLETED
+  FAILED
+}
 enum WorkspaceRole {
   OWNER
   EDITOR
@@ -47,6 +63,45 @@ enum CommentThreadStatus {
 enum NotificationType {
   MENTION
 }
+enum IntegrationKind {
+  GITHUB
+  GOOGLE
+}
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+}
+enum IntegrationCandidateStatus {
+  PENDING
+  ACCEPTED
+  DISMISSED
+}
+enum IntegrationCandidateChangeType {
+  CREATED
+  UPDATED
+  REMOVED
+}
+
+enum GoogleSyncStatus {
+  IDLE
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum GoogleDriveOutboxOperation {
+  CREATE
+  UPDATE
+  MOVE
+  ARCHIVE
+}
+
+enum GoogleDriveOutboxStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
 
 model User {
   id String @id @default(uuid())
@@ -60,6 +115,7 @@ model User {
   resolvedCommentThreads CommentThread[] @relation("commentThreadResolver")
   commentMessages CommentMessage[]
   notifications Notification[]
+  googleOAuthStates GoogleOAuthState[]
 }
 model Workspace {
   id String @id @default(uuid())
@@ -69,6 +125,8 @@ model Workspace {
   projects Project[]
   templates DocumentTemplate[]
   folders RequirementFolder[]
+  integrations IntegrationConnection[]
+  googleOAuthStates GoogleOAuthState[]
 }
 model WorkspaceMember {
   workspaceId String
@@ -87,6 +145,8 @@ model Project {
   createdAt DateTime @default(now())
   workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
   requirements Requirement[]
+  dependencyAnalyses DependencyAnalysis[]
+  googleDriveFolderLinks GoogleDriveFolderLink[]
   @@unique([workspaceId,key])
 }
 model Requirement {
@@ -110,8 +170,12 @@ model Requirement {
   outgoing RequirementRelation[] @relation("outgoing")
   incoming RequirementRelation[] @relation("incoming")
   impacts ImpactAnalysis[]
+  aiSuggestions AiSuggestion[] @relation("suggestionSource")
+  targetedByAiSuggestions AiSuggestion[] @relation("suggestionTarget")
   references RequirementReference[]
   commentThreads CommentThread[]
+  integrationSource IntegrationSource? @relation("canonicalIntegrationSource")
+  googleDriveOutbox GoogleDriveOutbox[]
   @@unique([projectId,code])
   @@index([projectId,status])
   @@index([folderId,status])
@@ -121,11 +185,16 @@ model RequirementFolder {
   workspaceId String
   name String
   description String?
+  parentId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  parent RequirementFolder? @relation("folderTree",fields:[parentId],references:[id],onDelete:Restrict)
+  children RequirementFolder[] @relation("folderTree")
   requirements Requirement[]
-  @@unique([workspaceId,name])
+  googleDriveFolderMappings GoogleDriveFolderMapping[]
+  @@unique([workspaceId,parentId,name])
+  @@index([workspaceId,parentId,name])
   @@index([workspaceId,updatedAt])
 }
 model AcceptanceCriterion {
@@ -205,6 +274,168 @@ model Notification {
   commentMessage CommentMessage? @relation(fields:[commentMessageId],references:[id],onDelete:Cascade)
   @@index([userId,readAt,createdAt])
 }
+
+/// A logical connection is retained after disconnect so source/candidate
+/// history remains auditable. Credentials are nulled on disconnect.
+model IntegrationConnection {
+  id String @id @default(uuid())
+  workspaceId String
+  kind IntegrationKind
+  status IntegrationStatus @default(DISCONNECTED)
+  accountLabel String?
+  encryptedCredentials String?
+  connectedAt DateTime?
+  disconnectedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  sources IntegrationSource[]
+  candidates IntegrationCandidate[]
+  googleDriveFolderLinks GoogleDriveFolderLink[]
+  @@unique([workspaceId,kind])
+  @@index([workspaceId,status])
+}
+
+model IntegrationSource {
+  id String @id @default(uuid())
+  connectionId String
+  externalId String
+  name String
+  mimeType String?
+  capturedAt DateTime @default(now())
+  externalVersion String?
+  lastSeenAt DateTime @default(now())
+  removedAt DateTime?
+  googleDriveFolderLinkId String?
+  canonicalRequirementId String? @unique
+  lastRemoteFingerprint String?
+  lastPushedFingerprint String?
+  lastRemoteModifiedAt DateTime?
+  connection IntegrationConnection @relation(fields:[connectionId],references:[id],onDelete:Cascade)
+  googleDriveFolderLink GoogleDriveFolderLink? @relation(fields:[googleDriveFolderLinkId],references:[id],onDelete:SetNull)
+  canonicalRequirement Requirement? @relation("canonicalIntegrationSource",fields:[canonicalRequirementId],references:[id],onDelete:SetNull)
+  candidates IntegrationCandidate[]
+  googleDriveOutbox GoogleDriveOutbox[]
+  @@unique([connectionId,externalId])
+  @@index([connectionId,capturedAt])
+  @@index([googleDriveFolderLinkId,removedAt])
+}
+
+model GoogleDriveFolderLink {
+  id String @id @default(uuid())
+  connectionId String
+  projectId String?
+  externalId String
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastSyncedAt DateTime?
+  syncStartedAt DateTime?
+  syncStatus GoogleSyncStatus @default(IDLE)
+  syncError String?
+  connection IntegrationConnection @relation(fields:[connectionId],references:[id],onDelete:Cascade)
+  project Project? @relation(fields:[projectId],references:[id],onDelete:SetNull)
+  sources IntegrationSource[]
+  folderMappings GoogleDriveFolderMapping[]
+  googleDriveOutbox GoogleDriveOutbox[]
+  @@unique([connectionId,externalId])
+  @@index([connectionId,updatedAt])
+  @@index([projectId,syncStatus])
+}
+
+/// Maps each Drive subfolder to the real nested folder shown in ATHENA.
+model GoogleDriveFolderMapping {
+  id String @id @default(uuid())
+  googleDriveFolderLinkId String
+  externalId String
+  parentExternalId String?
+  name String
+  folderId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  googleDriveFolderLink GoogleDriveFolderLink @relation(fields:[googleDriveFolderLinkId],references:[id],onDelete:Cascade)
+  folder RequirementFolder @relation(fields:[folderId],references:[id],onDelete:Cascade)
+  @@unique([googleDriveFolderLinkId,externalId])
+  @@unique([folderId])
+  @@index([googleDriveFolderLinkId,parentExternalId])
+}
+
+/// Durable writes from ATHENA to Drive.  The poller consumes this table so a
+/// successful database save never depends on an in-process HTTP request.
+model GoogleDriveOutbox {
+  id String @id @default(uuid())
+  googleDriveFolderLinkId String
+  integrationSourceId String?
+  requirementId String
+  operation GoogleDriveOutboxOperation
+  status GoogleDriveOutboxStatus @default(PENDING)
+  payload Json?
+  attempts Int @default(0)
+  error String?
+  availableAt DateTime @default(now())
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  googleDriveFolderLink GoogleDriveFolderLink @relation(fields:[googleDriveFolderLinkId],references:[id],onDelete:Cascade)
+  integrationSource IntegrationSource? @relation(fields:[integrationSourceId],references:[id],onDelete:SetNull)
+  requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
+  @@index([status,availableAt])
+  @@index([googleDriveFolderLinkId,status])
+}
+
+model IntegrationCandidate {
+  id String @id @default(uuid())
+  connectionId String
+  sourceId String?
+  externalId String
+  title String
+  content Json
+  status IntegrationCandidateStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  externalVersion String?
+  fingerprint String?
+  changeType IntegrationCandidateChangeType @default(CREATED)
+  previousTitle String?
+  previousContent Json?
+  reviewedAt DateTime?
+  connection IntegrationConnection @relation(fields:[connectionId],references:[id],onDelete:Cascade)
+  source IntegrationSource? @relation(fields:[sourceId],references:[id],onDelete:SetNull)
+  revisions IntegrationCandidateRevision[]
+  @@unique([connectionId,externalId])
+  @@index([connectionId,status])
+}
+
+/// Immutable snapshots make external diffs auditable without replacing the canonical US.
+model IntegrationCandidateRevision {
+  id String @id @default(uuid())
+  candidateId String
+  externalVersion String?
+  title String
+  content Json
+  fingerprint String
+  capturedAt DateTime @default(now())
+  candidate IntegrationCandidate @relation(fields:[candidateId], references:[id], onDelete:Cascade)
+  @@unique([candidateId, fingerprint])
+  @@index([candidateId, capturedAt])
+}
+
+/// Short-lived, one-use OAuth state bound to the initiating user/workspace.
+model GoogleOAuthState {
+  id String @id @default(uuid())
+  stateHash String @unique
+  workspaceId String
+  userId String
+  redirectUri String
+  scopes String
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields:[workspaceId], references:[id], onDelete:Cascade)
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  @@index([workspaceId, expiresAt])
+  @@index([stateHash, usedAt, expiresAt])
+}
 model RequirementVersion {
   id String @id @default(uuid())
   requirementId String
@@ -243,6 +474,8 @@ model ImpactAnalysis {
   createdAt DateTime @default(now())
   requirement Requirement @relation(fields:[requirementId],references:[id],onDelete:Cascade)
   items ImpactItem[]
+  suggestions AiSuggestion[]
+  @@unique([requirementId])
 }
 model ImpactItem {
   id String @id @default(uuid())
@@ -254,4 +487,56 @@ model ImpactItem {
   suggestedRelationType RelationType?
   analysis ImpactAnalysis @relation(fields:[analysisId],references:[id],onDelete:Cascade)
   @@unique([analysisId,targetRequirementId])
+}
+
+/// Provider proposals remain separate from historical ImpactItem rows. An
+/// approval can create a canonical relation/reference, but persistence of a
+/// suggestion never changes the requirement document itself.
+model AiSuggestion {
+  id String @id @default(uuid())
+  /// Legacy per-requirement analysis. New dependency proposals belong to a
+  /// project-wide DependencyAnalysis instead.
+  analysisId String?
+  dependencyAnalysisId String?
+  requirementId String
+  type AiSuggestionType
+  targetRequirementId String?
+  relationType RelationType?
+  referenceType ReferenceType?
+  url String?
+  confidence Float?
+  justification String
+  status AiSuggestionStatus @default(PENDING)
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  analysis ImpactAnalysis? @relation(fields:[analysisId],references:[id],onDelete:Cascade)
+  dependencyAnalysis DependencyAnalysis? @relation(fields:[dependencyAnalysisId],references:[id],onDelete:Cascade)
+  requirement Requirement @relation("suggestionSource",fields:[requirementId],references:[id],onDelete:Cascade)
+  targetRequirement Requirement? @relation("suggestionTarget",fields:[targetRequirementId],references:[id],onDelete:Cascade)
+  @@index([analysisId,status])
+  @@index([dependencyAnalysisId,status])
+  @@index([requirementId,status])
+  @@index([targetRequirementId])
+}
+
+/// An immutable record of one project-wide AI pass. Suggestions attached to
+/// it remain reviewable after the pass finishes; only pending suggestions are
+/// replaced when the next pass begins.
+model DependencyAnalysis {
+  id String @id @default(uuid())
+  projectId String
+  status DependencyAnalysisStatus @default(QUEUED)
+  totalRequirements Int @default(0)
+  processedRequirements Int @default(0)
+  suggestionsFound Int @default(0)
+  error String?
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  suggestions AiSuggestion[]
+  @@index([projectId,createdAt])
+  @@index([projectId,status])
 }

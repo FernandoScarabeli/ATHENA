@@ -9,5 +9,5 @@ athena_demo_require tailscale
 
 # Disable only ATHENA's selected HTTPS Funnel port; do not reset all Funnel config.
 tailscale funnel --https="$FUNNEL_HTTPS_PORT" off || true
-athena_demo_compose stop api postgres
+athena_demo_compose stop api postgres ollama
 echo "Demonstração parada. Containers e volumes foram preservados."

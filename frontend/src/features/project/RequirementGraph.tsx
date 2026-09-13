@@ -6,7 +6,7 @@ import { RequirementNode, type RequirementFlowNode } from './RequirementNode';
 
 const nodeTypes = { requirement: RequirementNode };
 
-function layout(data: GraphResponse, query: string, rootId?: string | null): RequirementFlowNode[] {
+function layout(data: GraphResponse, query: string, rootId?: string | null, highlightedIds = new Set<string>()): RequirementFlowNode[] {
   const normalized = query.trim().toLocaleLowerCase('pt-BR');
   const relationCounts = data.edges.reduce<Record<string, number>>((counts, edge) => {
     counts[edge.source] = (counts[edge.source] ?? 0) + 1;
@@ -22,13 +22,14 @@ function layout(data: GraphResponse, query: string, rootId?: string | null): Req
       id: node.id,
       type: 'requirement',
       position: rootId && node.id === rootId ? { x: 500, y: 260 } : { x: (index % columns) * 270, y: Math.floor(index / columns) * 145 },
-      data: { ...node, relationCount: relationCounts[node.id] ?? 0, matched: Boolean(normalized) && matched, dimmed: Boolean(normalized) && !matched },
+      data: { ...node, relationCount: relationCounts[node.id] ?? 0, matched: Boolean(normalized) && matched, dimmed: Boolean(normalized) && !matched, highlighted: highlightedIds.has(node.id) },
     };
   });
 }
 
-export function RequirementGraph({ data, query, rootId, onSelect }: { data: GraphResponse; query: string; rootId?: string | null; onSelect: (id: string) => void }) {
-  const computedNodes = useMemo(() => layout(data, query, rootId), [data, query, rootId]);
+export function RequirementGraph({ data, query, rootId, onSelect, highlightedIds = [] }: { data: GraphResponse; query: string; rootId?: string | null; onSelect: (id: string) => void; highlightedIds?: string[] }) {
+  const highlightSet = useMemo(() => new Set(highlightedIds), [highlightedIds]);
+  const computedNodes = useMemo(() => layout(data, query, rootId, highlightSet), [data, query, rootId, highlightSet]);
   const [nodes, setNodes] = useState(computedNodes);
   const [instance, setInstance] = useState<ReactFlowInstance<RequirementFlowNode, Edge> | null>(null);
   const visibleIds = useMemo(() => new Set(computedNodes.map((node) => node.id)), [computedNodes]);

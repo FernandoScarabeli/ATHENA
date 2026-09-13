@@ -31,6 +31,10 @@ beforeEach(() => {
   client.setQueryData(['comments', 'r1'], []);
   client.setQueryData(['references', 'r1'], [{ id: 'ref1', type: 'PROTOTYPE', name: 'Tela de login', url: 'https://example.com' }]);
   client.setQueryData(['participants', 'w1'], []);
+  client.setQueryData(['versions', 'r1'], [
+    { id: null, requirementId: 'r1', revision: 4, current: true, createdAt: '2026-01-04T10:00:00Z', snapshot: { revision: 4, title: 'Login', content: initial.content, folderId: 'f1', status: 'DRAFT', criteria: initial.criteria } },
+    { id: 'v3', requirementId: 'r1', revision: 3, createdAt: '2026-01-03T10:00:00Z', snapshot: { revision: 3, title: 'Login antigo', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Documento histórico' }] }] }, folderId: 'f1', status: 'DRAFT', criteria: [] } },
+  ]);
 });
 afterEach(() => { act(() => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals(); });
 const mount = async (role: WorkspaceRole = 'EDITOR') => {
@@ -73,6 +77,22 @@ describe('requirement document workflow', () => {
     expect(host.querySelector('#document-side-panel')).toBeNull();
   });
 
+  it('previews an older revision in read-only mode without losing the current draft', async () => {
+    await mount();
+    await changeTitle('Rascunho preservado');
+    await click('Histórico de versões');
+    await act(async () => { (Array.from(host.querySelectorAll('button')).find(node => node.textContent?.includes('Revisão 3')) as HTMLButtonElement).click(); });
+    expect(host.textContent).toContain('Visualizando revisão 3');
+    expect(host.textContent).toContain('Documento histórico');
+    expect(title().value).toBe('Login antigo');
+    expect(title().disabled).toBe(true);
+    expect(host.querySelector('[role="toolbar"]')).toBeNull();
+    await click('Voltar para a revisão atual');
+    expect(title().value).toBe('Rascunho preservado');
+    expect(title().disabled).toBe(false);
+    expect(button('Salvar').disabled).toBe(false);
+  });
+
   it.each(['VIEWER'] as WorkspaceRole[])('enforces %s access without editing tools', async role => {
     await mount(role);
     expect(title().disabled).toBe(true);
@@ -81,6 +101,27 @@ describe('requirement document workflow', () => {
     await click('Comentários');
     expect(Boolean(host.querySelector('textarea'))).toBe(true);
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it('opens an archived requirement by direct route in read-only mode', async () => {
+    client.setQueryData(['requirement', 'r1'], { ...initial, status: 'ARCHIVED' });
+    await mount('EDITOR');
+    expect(title().disabled).toBe(true);
+    expect(host.querySelector('[role="toolbar"]')).toBeNull();
+    expect(host.querySelector('button')?.textContent).not.toContain('Salvar');
+    expect(host.textContent).toContain('cancelada e disponível somente para consulta');
+    await click('Comentários');
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('blocks a requirement returned from another project before rendering editorial tools', async () => {
+    client.setQueryData(['requirement', 'r1'], { ...initial, projectId: 'another-project' });
+    await mount('EDITOR');
+    expect(host.textContent).toContain('Requisito indisponível neste projeto');
+    expect(host.textContent).toContain('pertence a outro projeto');
+    expect(host.querySelector('[role="toolbar"]')).toBeNull();
+    expect(host.querySelectorAll('button')).toHaveLength(0);
   });
 
   it('saves explicitly with Ctrl+S and clears pending status after draft activation', async () => {

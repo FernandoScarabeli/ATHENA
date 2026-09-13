@@ -15,7 +15,7 @@ if [ "$JWT_ACCESS_SECRET" = "athena-local-access-secret-change-in-production" ] 
 fi
 
 echo "Iniciando API de demonstração em 127.0.0.1:${FUNNEL_API_PORT} (PostgreSQL permanece privado)..."
-athena_demo_compose up -d --build postgres api
+athena_demo_compose up -d --build postgres ollama api
 attempt=0
 until curl --fail --silent --show-error "http://127.0.0.1:${FUNNEL_API_PORT}/api/health" >/dev/null; do
   attempt=$((attempt + 1))

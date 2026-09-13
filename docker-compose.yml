@@ -23,12 +23,18 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-athena-local-refresh-secret-change-in-production}
       COOKIE_SECURE: "false"
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-nomic-embed-text}
-      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-llama3.2}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-15000}
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:3000/api/integrations/google/oauth/callback}
     depends_on: { postgres: { condition: service_healthy } }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # Readiness verifies both HTTP startup and PostgreSQL connectivity.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -44,7 +50,6 @@ services:
     restart: unless-stopped
   ollama:
     image: ollama/ollama:latest
-    profiles: [ai]
     volumes: [ollama_data:/root/.ollama]
     restart: unless-stopped
   cloudflared:

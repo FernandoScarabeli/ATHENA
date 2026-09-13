@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
-import { CreateRequirementDto, UpdateRequirementDto, validTipTap } from '../src/requirements/dto';
+import { CreateFolderDto, CreateRequirementDto, UpdateFolderDto, UpdateRequirementDto, validTipTap } from '../src/requirements/dto';
 
 describe('CreateRequirementDto', () => {
   const pipe = new ValidationPipe({ whitelist: true, transform: true });
@@ -42,6 +42,10 @@ describe('CreateRequirementDto', () => {
     expect(validTipTap({ type:'doc', content:[{ type:'paragraph', content:[{ type:'text', text:'x', marks:[{ type:'textStyle', attrs:{ color:'red' } }] }] }] })).toBe(false);
     expect(validTipTap({ type:'doc', content:[{ type:'paragraph', attrs:{ textAlign:'start' }, content:[] }] })).toBe(false);
   });
+  it('rejeita propriedades desconhecidas em nós e marks', () => {
+    expect(validTipTap({ type:'doc', content:[], dataTest:'injetado' })).toBe(false);
+    expect(validTipTap({ type:'doc', content:[{ type:'paragraph', content:[{ type:'text', text:'x', marks:[{ type:'bold', attrs:{class:'unsafe'} }] }] }] })).toBe(false);
+  });
   it('rejeita atributos e cores de tabela não permitidos', () => {
     expect(validTipTap({ type:'doc', content:[{ type:'table', attrs:{style:'color:red'}, content:[] }] })).toBe(false);
     expect(validTipTap({ type:'doc', content:[{ type:'tableRow', attrs:{backgroundColor:'url(javascript:alert(1))'}, content:[] }] })).toBe(false);
@@ -58,5 +62,14 @@ describe('CreateRequirementDto', () => {
     expect(dto).toMatchObject({ revision: 3, title: 'Título revisado' });
     expect(dto).not.toHaveProperty('type');
     expect(dto).not.toHaveProperty('source');
+  });
+});
+
+describe('Folder DTOs', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+
+  it('rejects blank names at the HTTP validation boundary', async () => {
+    await expect(pipe.transform({ name: '   ' }, { type: 'body', metatype: CreateFolderDto })).rejects.toThrow();
+    await expect(pipe.transform({ name: '\t' }, { type: 'body', metatype: UpdateFolderDto })).rejects.toThrow();
   });
 });

@@ -7,7 +7,7 @@ athena_demo_load_env
 athena_demo_require docker
 athena_demo_require tailscale
 echo "Docker (demo):"
-athena_demo_compose ps api postgres
+athena_demo_compose ps api postgres ollama
 echo
 echo "Tailscale Funnel:"
 tailscale funnel status
