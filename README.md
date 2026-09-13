@@ -66,8 +66,8 @@ Preencha ao menos os dois segredos JWT com valores diferentes, longos e aleatór
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Segredos dos cookies de sessão; nunca use os valores de exemplo fora do desenvolvimento. |
 | `WEB_ORIGIN` | Origem permitida para o frontend. |
 | `COOKIE_SECURE` | `false` para HTTP local; `true` quando a aplicação é exposta por HTTPS. |
-| `AI_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | Configuração opcional do provider de IA/Ollama. |
-| `INTEGRATION_ENCRYPTION_KEY` | Chave prevista para credenciais de integrações. |
+| `AI_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_GENERATION_MODEL`, `OLLAMA_EMBEDDING_MODEL` | Configuração opcional do provider de IA/Ollama. |
+| `INTEGRATION_ENCRYPTION_KEY` | Obrigatória para a API: base64 de exatamente 32 bytes para AES-256-GCM; use secret manager e nunca versione/logue o valor. |
 
 O `docker-compose.yml` define a conexão interna do banco e a origem do frontend para seus próprios serviços. Alterar somente `DATABASE_URL` no `.env` não muda essa conexão do Compose.
 
@@ -111,6 +111,19 @@ docker compose down
 `docker compose down -v` também remove o volume `postgres_data`; use-o somente se você aceitar apagar o banco local.
 
 > O Compose padrão é uma topologia de implantação local. Antes de uma exposição real, substitua os defaults de JWT e configure HTTPS/`COOKIE_SECURE` adequadamente; o arquivo atual usa `COOKIE_SECURE=false` para acesso local em HTTP.
+
+### Docker com Ollama
+
+Para habilitar sugestões de IA localmente, defina no `.env` `AI_PROVIDER=ollama`; o Ollama sobe junto da stack e os modelos são instalados uma única vez no volume configurado:
+
+```bash
+docker compose up --build -d
+docker compose exec ollama ollama pull llama3.2
+docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama list
+```
+
+O serviço `api` alcança o Ollama em `http://ollama:11434`; não use `localhost` nesse modo. A análise global roda sem bloquear o salvamento e aplica as dependências identificadas diretamente no grafo; remover uma relação no mapa impede que a IA a recrie. Para desabilitar o provider, volte `AI_PROVIDER=disabled` e recrie a API.
 
 ### Docker com hot reload
 

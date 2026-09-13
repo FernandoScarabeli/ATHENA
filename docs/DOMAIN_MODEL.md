@@ -5,10 +5,11 @@
 ## Requisitos e rastreabilidade
 
 - `Requirement` guarda código `US-*`, título, documento TipTap JSON, pasta, status e `revision`. Todos os requisitos têm tipo `USER_STORY`; prioridade, tags livres e User Story separada não existem mais.
-- `RequirementFolder` pertence ao workspace e organiza cada requisito por uma única pasta. `Sem pasta` é obrigatória.
+- `RequirementFolder` pertence ao workspace e organiza cada requisito por uma única pasta. `Sem pasta` é obrigatória. A baseline parte de banco PostgreSQL novo; migração automática de tags ou de dados do RequisitoGraph não faz parte deste modelo.
 - `AcceptanceCriterion` é filho ordenado do requisito. Além do texto legado, o formato colaborativo representa título e cenário `given`, `when`, `then`, com conteúdo complementar opcional quando aplicável.
 - `RequirementVersion` armazena o snapshot anterior. Toda alteração editorial relevante cria versão, incrementa `revision` e registra `ActivityLog` na mesma transação.
 - `RequirementRelation` liga requisitos no mesmo projeto; `RequirementReference` registra links externos de `PROTOTYPE` ou `ATTACHMENT`. Referência é metadado/link, não upload de arquivo.
+- `AiSuggestion` pertence a uma `ImpactAnalysis` e à US de origem. Pode propor uma `RELATION` para outra US ativa do mesmo projeto ou uma `REFERENCE` com URL `http`, `https` ou `mailto`; sua decisão (`PENDING`/`CONFIRMED`/`DISMISSED`) não altera a US canônica sem aprovação explícita.
 
 ## Colaboração
 
@@ -23,6 +24,6 @@
 | --- | --- | --- | --- | --- |
 | `OWNER` | Sim | Sim | Sim | Sim |
 | `EDITOR` | Sim | Sim | Sim | Não |
-| `VIEWER` | Sim | Não | Não | Não |
+| `VIEWER` | Sim | Sim | Não | Não |
 
-Owners também podem resolver/reabrir threads; Editors podem resolver/reabrir qualquer thread do workspace; Commenters podem resolver apenas threads que criaram.
+Owners também podem resolver/reabrir threads; Editors podem resolver/reabrir qualquer thread do workspace. Viewers podem comentar, responder e resolver/reabrir apenas as threads que criaram, conforme as regras de autorização da API.

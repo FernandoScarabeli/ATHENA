@@ -12,10 +12,10 @@ As User Stories usadas pela equipe combinam narrativa, cenários de aceite, tabe
 - A colaboração inicial usa edição exclusiva por revisão otimista, não CRDT/edição simultânea. Conflitos devolvem `REQUIREMENT_REVISION_CONFLICT` e o cliente mantém o rascunho local para reconciliação.
 - O editor usa salvamento explícito: cada clique em “Salvar agora” ou Ctrl/Cmd+S gera no máximo uma nova revisão, mantendo o controle de revisão otimista.
 - Comentários são threads ancoradas em seleção, com mensagens e menções. A âncora persistida contém posições e a citação selecionada como fallback; apagar o trecho não apaga a thread.
-- A autorização é centralizada no backend usando `WorkspaceMember.role`: Owner administra workspace e projetos; Editor edita; Commenter comenta; Viewer somente lê. O frontend apenas adapta a interface ao papel, sem substituir a verificação do servidor.
+- A autorização é centralizada no backend usando `WorkspaceMember.role`: Owner administra workspace e projetos; Editor edita; Viewer lê e comenta, mas não edita. `COMMENTER` é nomenclatura obsoleta e não é um papel atual. O frontend apenas adapta a interface ao papel, sem substituir a verificação do servidor.
 
 ## Consequências
 
 - O editor pode ser visualmente simples, mantendo comandos de tabela e formatação contextuais em vez de uma barra fixa extensa. A User Story é escrita diretamente no Documento; não há campos separados de descrição.
 - Comentários e templates não incrementam a revisão do requisito; mudanças no conteúdo/metadados/critério, sim.
-- O primeiro MVP não oferece upload, convites por e-mail, notificações externas, permissões por projeto ou edição simultânea.
+- O primeiro MVP não oferece upload, convites por e-mail, notificações externas, permissões por projeto ou edição simultânea. O provider real de IA ainda não está integrado ao fluxo da API.

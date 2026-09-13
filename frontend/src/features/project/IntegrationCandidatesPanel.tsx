@@ -1,0 +1,12 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api';
+import type { IntegrationCandidate, WorkspaceRole } from '../../lib/types';
+import { GoogleDrivePanel } from './GoogleDrivePanel';
+
+const labels = { CREATED: 'Novo', UPDATED: 'Alterado', REMOVED: 'Removido' } as const;
+export function IntegrationCandidatesPanel({ workspaceId, projectId: _projectId, role }: { workspaceId: string; projectId: string; role?: WorkspaceRole }) {
+  const candidates = useQuery<IntegrationCandidate[]>({ queryKey: ['integration-candidates', workspaceId], queryFn: () => api(`/workspaces/${workspaceId}/integration-candidates`) });
+  if (candidates.isLoading) return <section className="list-page"><GoogleDrivePanel workspaceId={workspaceId} role={role}/><p className="empty-copy">Carregando importações…</p></section>;
+  if (candidates.isError) return <section className="list-page"><div className="inline-error" role="alert">Não foi possível carregar candidatos: {candidates.error.message}</div><button className="secondary-button" onClick={() => candidates.refetch()}>Tentar novamente</button></section>;
+  return <section className="list-page"><GoogleDrivePanel workspaceId={workspaceId} role={role}/><header className="list-heading"><div><p className="section-kicker">Integrações</p><h1>Histórico de sincronização</h1><p>Alterações externas são aplicadas automaticamente e mantidas aqui como trilha de auditoria.</p></div><span className="count-summary">{candidates.data?.length ?? 0} registros</span></header>{candidates.data?.length ? <div className="requirements-table">{candidates.data.map(candidate => <article className="table-row" key={candidate.id}><span className="table-title"><i>{candidate.connection.kind === 'GITHUB' ? 'GH' : 'GD'}</i><span><strong>{candidate.title}</strong><small>{candidate.externalId} · {labels[candidate.changeType]}</small></span></span><span><strong>{candidate.content.content?.slice(0, 120) || 'Sem conteúdo'}</strong>{candidate.changeType === 'UPDATED' && <small>Anterior: {candidate.previousTitle || candidate.previousContent?.content?.slice(0, 120) || 'sem snapshot'}</small>}</span><span>{candidate.externalVersion || 'sem versão'}</span><span className="status-pill">{candidate.status === 'ACCEPTED' ? 'Sincronizado' : candidate.status}</span></article>)}</div> : <div className="list-empty"><strong>Nenhuma sincronização registrada</strong><span>Vincule uma pasta e use “Sincronizar agora”, ou aguarde a próxima verificação automática.</span></div>}</section>;
+}

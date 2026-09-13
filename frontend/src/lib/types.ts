@@ -1,8 +1,24 @@
-export type RequirementType = 'USER_STORY';
-export type RequirementStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
-export type RelationType = 'RELATED_TO' | 'DEPENDS_ON' | 'BLOCKS' | 'CONFLICTS_WITH';
-export type WorkspaceRole = 'OWNER' | 'EDITOR' | 'VIEWER';
-export type ReferenceType = 'PROTOTYPE' | 'ATTACHMENT';
+import type {
+  CommentAnchor,
+  CommentThreadStatus,
+  NotificationType,
+  ReferenceType as SharedReferenceType,
+  RelationType as SharedRelationType,
+  RequirementStatus as SharedRequirementStatus,
+  RequirementType as SharedRequirementType,
+  WorkspaceRole as SharedWorkspaceRole,
+  AiSuggestionStatus as SharedAiSuggestionStatus,
+  AiSuggestionType as SharedAiSuggestionType,
+} from '@athena/shared';
+
+export type RequirementType = SharedRequirementType;
+export type RequirementStatus = SharedRequirementStatus;
+export type RelationType = SharedRelationType;
+export type WorkspaceRole = SharedWorkspaceRole;
+export type AiSuggestionStatus = SharedAiSuggestionStatus;
+export type AiSuggestionType = SharedAiSuggestionType;
+export type ReferenceType = SharedReferenceType;
+export type { CommentAnchor, CommentThreadStatus, NotificationType };
 
 export interface User { id: string; name: string; email: string }
 export interface Workspace { id: string; name: string; role?: WorkspaceRole }
@@ -45,7 +61,23 @@ export interface Requirement {
   createdAt?: string;
   updatedAt?: string;
 }
-export interface RequirementFolder { id: string; workspaceId: string; name: string; description?: string | null; requirementCount?: number; }
+export interface RequirementVersion {
+  id: string | null;
+  requirementId: string;
+  revision: number;
+  snapshot: Pick<Requirement, 'title' | 'content' | 'folderId' | 'status' | 'criteria'> & { revision: number };
+  createdAt?: string;
+  current?: boolean;
+}
+export interface RequirementDiff {
+  from: number;
+  to: number;
+  changedFields: string[];
+  changes: { title: { from: string; to: string } | null; document: { from: Record<string, unknown>; to: Record<string, unknown> } | null; folder: { from: string; to: string } | null };
+  criteriaAdded: string[];
+  criteriaRemoved: string[];
+}
+export interface RequirementFolder { id: string; workspaceId: string; name: string; description?: string | null; parentId?: string | null; requirementCount?: number; }
 
 export interface RequirementTemplate {
   id: string;
@@ -76,8 +108,8 @@ export interface CommentThread {
   id: string;
   requirementId: string;
   quote?: string | null;
-  anchor?: { from?: number; to?: number; quote?: string } | null;
-  status: 'OPEN' | 'RESOLVED';
+  anchor?: CommentAnchor | null;
+  status: CommentThreadStatus;
   author: User;
   messages: CommentMessage[];
   resolvedBy?: User | null;
@@ -87,7 +119,7 @@ export interface CommentThread {
 
 export interface Notification {
   id: string;
-  type: 'MENTION' | string;
+  type: NotificationType;
   readAt?: string | null;
   createdAt: string;
   commentMessage?: { author: Pick<User, 'id' | 'name'>; thread: { requirement: Pick<Requirement, 'id' | 'title' | 'projectId'> } } | null;
@@ -111,4 +143,54 @@ export interface RequirementRelation {
   type: RelationType;
   source: Requirement;
   target: Requirement;
+}
+
+export interface AiSuggestion {
+  id: string;
+  analysisId: string;
+  requirementId: string;
+  type: AiSuggestionType;
+  targetRequirementId?: string | null;
+  relationType?: RelationType | null;
+  referenceType?: ReferenceType | null;
+  url?: string | null;
+  confidence: number;
+  justification: string;
+  status: AiSuggestionStatus;
+  error?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export type DependencyAnalysisStatus = 'QUEUED' | 'READING' | 'PERSISTING' | 'COMPLETED' | 'FAILED';
+export interface DependencySuggestion extends AiSuggestion {
+  requirement: Pick<Requirement, 'id' | 'code' | 'title'>;
+  targetRequirement: Pick<Requirement, 'id' | 'code' | 'title'>;
+}
+export interface DependencyAnalysis {
+  id: string;
+  status: DependencyAnalysisStatus;
+  totalRequirements: number;
+  processedRequirements: number;
+  suggestionsFound: number;
+  error?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  suggestions: DependencySuggestion[];
+}
+
+export type IntegrationCandidateStatus = 'PENDING' | 'ACCEPTED' | 'DISMISSED';
+export type IntegrationCandidateChangeType = 'CREATED' | 'UPDATED' | 'REMOVED';
+export interface IntegrationCandidate {
+  id: string;
+  externalId: string;
+  title: string;
+  content: { provider?: string; content?: string; mimeType?: string };
+  status: IntegrationCandidateStatus;
+  changeType: IntegrationCandidateChangeType;
+  externalVersion?: string | null;
+  previousTitle?: string | null;
+  previousContent?: { provider?: string; content?: string; mimeType?: string } | null;
+  updatedAt: string;
+  source?: { name: string; removedAt?: string | null } | null;
+  connection: { kind: 'GITHUB' | 'GOOGLE'; workspaceId: string };
 }

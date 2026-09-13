@@ -20,11 +20,17 @@ function readSavedContext(userId: string): SavedContext | null {
   }
 }
 
+function readDirectProjectId() {
+  return window.location.pathname.match(/^\/projects\/([^/]+)\/requirements\/[^/]+\/edit\/?$/)?.[1] ?? null;
+}
+
 export function Onboarding({ user, onLogout }: { user: User; onLogout: () => void }) {
   const client = useQueryClient();
   const savedContext = useState(() => readSavedContext(user.id))[0];
-  const [workspaceId, setWorkspaceId] = useState<string | null>(savedContext?.workspaceId ?? null);
-  const [projectId, setProjectId] = useState<string | null>(savedContext?.projectId ?? null);
+  const directProjectId = useState(readDirectProjectId)[0];
+  const [workspaceId, setWorkspaceId] = useState<string | null>(directProjectId ? null : savedContext?.workspaceId ?? null);
+  const [projectId, setProjectId] = useState<string | null>(directProjectId ? null : savedContext?.projectId ?? null);
+  const [directRouteResolved, setDirectRouteResolved] = useState(!directProjectId);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
@@ -33,6 +39,21 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
   const workspaces = useQuery<WorkspaceSummary[]>({ queryKey: ['workspaces'], queryFn: () => api('/workspaces') });
   const workspace = workspaces.data?.find((item) => item.id === workspaceId) ?? null;
   const project = workspace?.projects.find((item) => item.id === projectId) ?? null;
+
+  useEffect(() => {
+    if (!workspaces.data || !directProjectId || directRouteResolved) return;
+    const routedWorkspace = workspaces.data.find((item) => item.projects.some((candidate) => candidate.id === directProjectId));
+    setDirectRouteResolved(true);
+    if (routedWorkspace) {
+      setWorkspaceId(routedWorkspace.id);
+      setProjectId(directProjectId);
+    } else {
+      // An invalid or unauthorized direct URL must not fall back to a saved project.
+      setWorkspaceId(null);
+      setProjectId(null);
+      window.history.replaceState({}, '', '/');
+    }
+  }, [directProjectId, directRouteResolved, workspaces.data]);
 
   useEffect(() => {
     if (!workspaces.data) return;

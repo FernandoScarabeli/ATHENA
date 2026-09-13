@@ -66,3 +66,30 @@ Bloqueada. As regiões prioritárias seriam: cabeçalho/marca, composição das 
 final result: blocked
 
 Blocker: não há navegador disponível nem screenshot renderizado atual para a comparação visual obrigatória.
+
+---
+
+# Design QA — compositor de relações
+
+- Source visual truth: `/home/fernandoscarabeli/.codex/generated_images/01a097cf-03fd-7c12-ac52-157924ff948e/exec-fbd34fe6-fcde-484b-a1ee-52d3664eea7d.png` (420 × 720).
+- Implementation: `RequirementDrawer.tsx` e `styles.css`; viewport-alvo: drawer de 420 px.
+- Captura renderizada: bloqueada. A prévia local abriu no Chrome, mas chegou à tela de login e não havia sessão/fixture autorizada para abrir um drawer com dados; nenhuma escrita foi feita.
+
+**Findings**
+
+- [P2] Comparação visual do estado real ainda não executada. O compositor, escolha de US, inversão, tipos e prévia têm testes de UI, mas precisam de captura autenticada desktop/mobile.
+
+**Required fidelity surfaces**
+
+- Tipografia, ritmo, cores e copy usam os tokens existentes e foram alinhados ao mock selecionado; imagem/arte customizada não é usada e os ícones vêm de `lucide-react`.
+- Responsividade e foco ainda exigem inspeção renderizada; a interface usa botões rotulados, `radiogroup`, `listbox` e foco global visível.
+
+**Implementation checklist**
+
+1. Abrir uma US com ao menos outra US ativa em ambiente isolado.
+2. Capturar o drawer em 420 px e mobile, abrir seletor, inverter direção e criar relação.
+3. Comparar com a fonte acima e corrigir quaisquer P0/P1/P2.
+
+final result: blocked
+
+Blocker: falta sessão autenticada com fixture segura para captura visual comparável.

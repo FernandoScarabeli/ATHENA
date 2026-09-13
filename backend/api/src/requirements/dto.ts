@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsEmail, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, Validate, ValidateNested, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEmail, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, Validate, ValidateNested, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
 
 export enum StatusDto { DRAFT='DRAFT', ACTIVE='ACTIVE', ARCHIVED='ARCHIVED' }
 export enum RelationDto { RELATED_TO='RELATED_TO', DEPENDS_ON='DEPENDS_ON', BLOCKS='BLOCKS', CONFLICTS_WITH='CONFLICTS_WITH' }
@@ -16,6 +16,15 @@ const safeUrl = (href: unknown) => typeof href === 'string' && /^(https?:\/\/|ma
 const safeFontFamilies = new Set(['Inter','Arial','Georgia','Times New Roman','Verdana','Courier New']);
 const safeFontSizes = new Set(['10px','11px','12px','14px','16px','18px','24px','32px']);
 const safeColor = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value));
+const nodeKeys: Record<string, string[]> = {
+  doc:['type','content'], paragraph:['type','attrs','content'], text:['type','text','marks'], heading:['type','attrs','content'],
+  bulletList:['type','content'], orderedList:['type','attrs','content'], listItem:['type','content'], blockquote:['type','content'],
+  codeBlock:['type','attrs','content'], hardBreak:['type'], horizontalRule:['type'], taskList:['type','content'], taskItem:['type','attrs','content'],
+  table:['type','content'], tableRow:['type','attrs','content'], tableHeader:['type','attrs','content'], tableCell:['type','attrs','content'],
+};
+const markKeys: Record<string, string[]> = {
+  bold:['type'], italic:['type'], underline:['type'], strike:['type'], code:['type'], link:['type','attrs'], textStyle:['type','attrs'],
+};
 function validAttrs(type: string, attrs: unknown): boolean {
   if (attrs === undefined) return true;
   if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) return false;
@@ -35,16 +44,19 @@ function validAttrs(type: string, attrs: unknown): boolean {
 export function validTipTap(value: unknown, root = true): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as { type?: unknown; attrs?: unknown; marks?: unknown; text?: unknown; content?: unknown };
-  if (typeof v.type !== 'string' || !nodes.has(v.type) || (root && v.type !== 'doc') || !validAttrs(v.type, v.attrs)) return false;
+  const nodeType = v.type;
+  if (typeof nodeType !== 'string' || !nodes.has(nodeType) || (root && nodeType !== 'doc') || !validAttrs(nodeType, v.attrs)) return false;
+  if (Object.keys(value as object).some(key => !(nodeKeys[nodeType] ?? []).includes(key))) return false;
   if (v.marks !== undefined) {
     if (!Array.isArray(v.marks)) return false;
     for (const mark of v.marks as Array<{type?: unknown; attrs?: unknown}>) {
-      if (!mark || typeof mark !== 'object' || typeof mark.type !== 'string' || !marks.has(mark.type)) return false;
-      if (mark.type === 'link') {
+      const markType = mark?.type;
+      if (!mark || typeof mark !== 'object' || typeof markType !== 'string' || !marks.has(markType) || Object.keys(mark).some(key => !(markKeys[markType] ?? []).includes(key))) return false;
+      if (markType === 'link') {
         if (!mark.attrs || typeof mark.attrs !== 'object' || Array.isArray(mark.attrs)) return false;
         const attrs = mark.attrs as Record<string, unknown>;
         if (Object.keys(attrs).some(key => !['href','target','rel','class'].includes(key)) || !safeUrl(attrs.href)) return false;
-      } else if (mark.type === 'textStyle') {
+      } else if (markType === 'textStyle') {
         if (!mark.attrs || typeof mark.attrs !== 'object' || Array.isArray(mark.attrs)) return false;
         const attrs = mark.attrs as Record<string, unknown>;
         if (Object.keys(attrs).some(key => !['fontSize','fontFamily','color','backgroundColor'].includes(key))) return false;
@@ -100,14 +112,22 @@ export class CreateTemplateDto {
   @IsObject() @Validate(TipTapDocumentConstraint) content!: Record<string, unknown>;
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(() => CriterionDto) acceptanceCriteria?: CriterionDto[];
 }
-export class CreateFolderDto { @IsString() @MaxLength(120) name!: string; @IsOptional() @IsString() @MaxLength(500) description?: string; }
-export class UpdateFolderDto { @IsOptional() @IsString() @MaxLength(120) name?: string; @IsOptional() @IsString() @MaxLength(500) description?: string; }
+export class CreateFolderDto { @IsString() @Matches(/\S/, { message: 'O nome da pasta não pode ficar vazio' }) @MaxLength(120) name!: string; @IsOptional() @IsString() @MaxLength(500) description?: string; @IsOptional() @IsUUID() parentId?: string; }
+export class UpdateFolderDto { @IsOptional() @IsString() @Matches(/\S/, { message: 'O nome da pasta não pode ficar vazio' }) @MaxLength(120) name?: string; @IsOptional() @IsString() @MaxLength(500) description?: string; @IsOptional() @IsUUID() parentId?: string | null; }
 export class UpdateTemplateDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;
   @IsOptional() @IsObject() @Validate(TipTapDocumentConstraint) content?: Record<string, unknown>;
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(() => CriterionDto) acceptanceCriteria?: CriterionDto[];
 }
+export class ApproveIntegrationCandidateDto {
+  @IsUUID() projectId!: string;
+  @IsOptional() @IsUUID() folderId?: string;
+  @IsOptional() @IsUUID() requirementId?: string;
+  @IsOptional() @IsString() expectedUpdatedAt?: string;
+  @IsOptional() @IsInt() @Min(1) expectedRevision?: number;
+}
+export class RejectIntegrationCandidateDto { @IsOptional() @IsString() expectedUpdatedAt?: string; }
 export class CreateReferenceDto { @IsEnum(ReferenceTypeDto) type!:ReferenceTypeDto; @IsString() @MaxLength(240) name!:string; @IsString() @MaxLength(2000) url!:string; @IsOptional() @IsInt() @Min(0) position?:number; }
 export class CreateCommentDto { @IsString() @MaxLength(5000) body!:string; @IsOptional() @IsObject() anchor?: Record<string, unknown>; @IsOptional() @IsArray() @ArrayMaxSize(30) @IsUUID('4',{each:true}) mentionedUserIds?: string[]; }
 export class CreateCommentReplyDto { @IsString() @MaxLength(5000) body!:string; @IsOptional() @IsArray() @ArrayMaxSize(30) @IsUUID('4',{each:true}) mentionedUserIds?: string[]; }
