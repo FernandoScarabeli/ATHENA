@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, ChevronDown, Database, FileText, Link2, Plus, Sparkles } from 'lucide-react';
 import { Icon } from '../../components/Icon';
+import { ConfirmDialog } from '../../components/ui/Dialog';
 import { api } from '../../lib/api';
 import type { AiSuggestion, Requirement, RequirementRelation } from '../../lib/types';
 
@@ -23,6 +24,7 @@ export function RequirementDrawer({ requirement, projectRequirements = [], canEd
   const [type, setType] = useState<keyof typeof relationLabels>('RELATED_TO');
   const [direction, setDirection] = useState<'OUTGOING' | 'INCOMING'>('OUTGOING');
   const [composerOpen, setComposerOpen] = useState(false);
+  const [relationToRemove, setRelationToRemove] = useState<RequirementRelation | null>(null);
   const [openSections, setOpenSections] = useState({ criteria: false, relations: true, suggestions: false, metadata: true });
   const invalidateRelationQueries = async (ids: string[]) => Promise.all([...new Set(ids)].map((id) => client.invalidateQueries({ queryKey: ['relations', id] })));
   const createRelation = useMutation({ mutationFn: () => api<RequirementRelation>(`/requirements/${direction === 'OUTGOING' ? requirement.id : targetId}/relations`, { method: 'POST', body: JSON.stringify({ targetId: direction === 'OUTGOING' ? targetId : requirement.id, type }) }), onSuccess: async (relation) => { setTargetId(''); createRelation.reset(); await Promise.all([invalidateRelationQueries([relation.sourceId, relation.targetId]), client.invalidateQueries({ queryKey: ['graph', requirement.projectId] })]); } });
@@ -68,6 +70,7 @@ export function RequirementDrawer({ requirement, projectRequirements = [], canEd
   }, [onClose]);
 
   return (
+    <>
     <aside className="details-panel" aria-label={`Detalhes de ${requirement.code}`}>
       <div className="drawer-content">
         <header className="panel-header"><div><span className="drawer-code">{requirement.code}</span><h2>{requirement.title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Fechar detalhes"><Icon name="close" size={16}/></button></header>
@@ -86,7 +89,7 @@ export function RequirementDrawer({ requirement, projectRequirements = [], canEd
                 <span><strong>{other.code} · {other.title}</strong><small>{relation.sourceId === requirement.id ? relationLabels[relation.type] : `${relationLabels[relation.type]} desta US`}</small></span>
                 <Icon name="chevron" size={14}/>
               </button>
-              {canEdit && <button type="button" className="text-button relation-remove" disabled={removeRelation.isPending} onClick={() => { if (window.confirm(`Remover a relação ${relation.source.code} → ${relation.target.code}?`)) removeRelation.mutate(relation.id); }}>Remover</button>}
+              {canEdit && <button type="button" className="text-button relation-remove" disabled={removeRelation.isPending} onClick={() => setRelationToRemove(relation)}>Remover</button>}
             </div>;
           })}
         </div>
@@ -122,6 +125,8 @@ export function RequirementDrawer({ requirement, projectRequirements = [], canEd
       </div>
       {onEdit && <footer className="drawer-footer"><button className="primary-button drawer-open-button" onClick={onEdit}>Abrir requisito <Icon name="chevron" size={16}/></button></footer>}
     </aside>
+    {relationToRemove && <ConfirmDialog title="Remover relação?" description={<>A relação <strong>{relationToRemove.source.code} → {relationToRemove.target.code}</strong> deixará de aparecer no mapa.</>} confirmLabel="Remover relação" pending={removeRelation.isPending} onCancel={() => setRelationToRemove(null)} onConfirm={() => removeRelation.mutate(relationToRemove.id, { onSuccess: () => setRelationToRemove(null) })}/>}
+    </>
   );
 }
 
@@ -158,22 +163,21 @@ function AiSuggestionsContent({ suggestions, loading, error, analysis, analysisL
 }
 
 function AiSuggestionCard({ suggestion, canEdit, mutation, projectRequirements }: { suggestion: AiSuggestion; canEdit: boolean; mutation: SuggestionMutation; projectRequirements: Requirement[] }) {
+  const [decision, setDecision] = useState<SuggestionDecision | null>(null);
   const target = suggestion.targetRequirementId ? projectRequirements.find((item) => item.id === suggestion.targetRequirementId) : undefined;
   const pending = suggestion.status === 'PENDING';
   const busy = mutation.isPending && mutation.variables?.id === suggestion.id;
   const failed = Boolean(mutation.error && mutation.variables?.id === suggestion.id);
   const targetLabel = suggestion.type === 'RELATION' ? `${suggestion.relationType ? relationLabels[suggestion.relationType] : 'Relação'}${target ? ` · ${target.code} — ${target.title}` : ''}` : `${suggestion.referenceType ? referenceLabels[suggestion.referenceType] : 'Referência'}${suggestion.url ? ` · ${suggestion.url}` : ''}`;
-  const decide = (decision: 'approve' | 'dismiss') => {
-    const message = decision === 'approve' ? `Aplicar esta sugestão como ${suggestion.type === 'RELATION' ? 'relação no grafo' : 'referência'}?` : 'Descartar esta sugestão?';
-    if (window.confirm(message)) mutation.mutate({ id: suggestion.id, decision });
-  };
+  const decisionCopy = decision === 'approve' ? `A sugestão será aplicada como ${suggestion.type === 'RELATION' ? 'relação no mapa' : 'referência'}.` : 'A sugestão será descartada e continuará registrada no histórico.';
   return <article className={`suggestion-card suggestion-${suggestion.status.toLowerCase()}`}>
     <header><strong>{suggestion.type === 'RELATION' ? 'Relação sugerida' : 'Referência sugerida'}</strong><span className="suggestion-status">{suggestionStatusLabels[suggestion.status]}</span></header>
     <div className="suggestion-target"><span>Alvo</span><strong>{targetLabel}</strong>{suggestion.url && <a href={suggestion.url} target="_blank" rel="noreferrer">Abrir URL</a>}</div>
     <div className="suggestion-meta"><span>Confiança {Math.round(suggestion.confidence * 100)}%</span><span>Origem: análise de IA</span></div>
     <p className="suggestion-justification">{suggestion.justification}</p>
     {suggestion.error && <div className="inline-error" role="alert">{suggestion.error}</div>}
-    {pending && canEdit && <div className="suggestion-actions"><button type="button" className="primary-button" disabled={busy || mutation.isPending} onClick={() => decide('approve')}>{busy && mutation.variables?.decision === 'approve' ? 'Aplicando…' : 'Aprovar'}</button><button type="button" className="secondary-button" disabled={busy || mutation.isPending} onClick={() => decide('dismiss')}>{busy && mutation.variables?.decision === 'dismiss' ? 'Descartando…' : 'Descartar'}</button></div>}
+    {pending && canEdit && <div className="suggestion-actions"><button type="button" className="primary-button" disabled={busy || mutation.isPending} onClick={() => setDecision('approve')}>{busy && mutation.variables?.decision === 'approve' ? 'Aplicando…' : 'Aprovar'}</button><button type="button" className="secondary-button" disabled={busy || mutation.isPending} onClick={() => setDecision('dismiss')}>{busy && mutation.variables?.decision === 'dismiss' ? 'Descartando…' : 'Descartar'}</button></div>}
     {failed && mutation.error && <div className="inline-error" role="alert">{mutation.error.message} Tente novamente.</div>}
+    {decision && <ConfirmDialog title={decision === 'approve' ? 'Aplicar sugestão?' : 'Descartar sugestão?'} description={decisionCopy} confirmLabel={decision === 'approve' ? 'Aplicar sugestão' : 'Descartar sugestão'} tone={decision === 'approve' ? 'primary' : 'danger'} pending={busy} onCancel={() => setDecision(null)} onConfirm={() => { mutation.mutate({ id: suggestion.id, decision }); setDecision(null); }}/>}
   </article>;
 }

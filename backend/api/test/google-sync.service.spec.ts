@@ -27,7 +27,7 @@ describe('GoogleSyncService', () => {
     const pushed = createHash('sha256').update(JSON.stringify({ title: 'US sincronizada', content: document })).digest('hex');
     const prisma: any = { integrationSource: { findUnique: jest.fn().mockResolvedValue({ id: 's1', lastPushedFingerprint: pushed, canonicalRequirement: { id: 'r1', projectId: 'p', title: 'US sincronizada', content: document, folderId: 'f1', revision: 1, updatedAt: new Date(), archivedAt: null, status: 'ACTIVE' } }), update: jest.fn().mockResolvedValue({}) } };
     const service = new GoogleSyncService(prisma, {} as any, {} as any, {} as any);
-    await expect((service as any).applyRemote({ id: 'l1', connectionId: 'c1', projectId: 'p', externalId: 'root', name: 'Raiz', connection: { workspaceId: 'w', status: 'CONNECTED' } }, { id: 'file-1', name: 'US sincronizada', mimeType: 'application/vnd.google-apps.document', modifiedTime: new Date().toISOString() }, 'Mesmo conteúdo', document, 'f1')).resolves.toBe(false);
+    await expect((service as any).applyRemote({ id: 'l1', connectionId: 'c1', projectId: 'p', externalId: 'root', name: 'Raiz', connection: { workspaceId: 'w', status: 'CONNECTED' } }, 'run-1', { id: 'file-1', name: 'US sincronizada', mimeType: 'application/vnd.google-apps.document', modifiedTime: new Date().toISOString() }, 'Mesmo conteúdo', document, 'f1')).resolves.toBe(false);
     expect(prisma.integrationSource.update).toHaveBeenCalled();
   });
 });

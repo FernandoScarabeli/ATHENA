@@ -49,11 +49,21 @@ export function RequirementGraph({ data, query, rootId, onSelect, highlightedIds
     markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#aeb5bd' },
     style: { stroke: '#b8bec6', strokeWidth: 1.1 },
   })), [data.edges, visibleIds]);
+  const relationshipDirectory = useMemo(() => data.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)).map((edge) => {
+    const source = data.nodes.find((node) => node.id === edge.source);
+    const target = data.nodes.find((node) => node.id === edge.target);
+    return { id: edge.id, source, target, type: edge.type.replaceAll('_', ' ') };
+  }).filter((edge) => edge.source && edge.target), [data.edges, data.nodes, visibleIds]);
 
   if (!nodes.length) return <div className="graph-empty"><span className="state-symbol"><Icon name="map" size={20}/></span><strong>Nenhum requisito para exibir</strong><span>Adicione o primeiro requisito.</span></div>;
 
   return (
     <div className="graph-wrap">
+      <aside className="graph-directory" aria-label="Relações exibidas no mapa">
+        <header><span className="section-kicker">Leitura do mapa</span><strong>{relationshipDirectory.length} relação{relationshipDirectory.length === 1 ? '' : 'ões'}</strong></header>
+        <p>Selecione uma relação para abrir uma das User Stories envolvidas.</p>
+        <ul>{relationshipDirectory.length ? relationshipDirectory.map((edge) => <li key={edge.id}><button type="button" onClick={() => onSelect(edge.target!.id)}><span>{edge.source!.code} <Icon name="chevron" size={11}/> {edge.target!.code}</span><small>{edge.type}</small></button></li>) : <li className="graph-directory-empty">Não há relações neste recorte.</li>}</ul>
+      </aside>
       <ReactFlow<RequirementFlowNode, Edge>
         nodes={nodes}
         edges={edges}

@@ -18,6 +18,10 @@ export class GoogleService {
     const member = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
     if (!member || member.role !== WorkspaceRole.OWNER) throw new ForbiddenException('Somente OWNER pode operar a integração Google');
   }
+  private async member(userId: string, workspaceId: string) {
+    const membership = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
+    if (!membership) throw new ForbiddenException('Você não participa deste workspace');
+  }
   private config() {
     const clientId = process.env.GOOGLE_CLIENT_ID?.trim(); const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim(); const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim();
     if (!clientId || !clientSecret || !redirectUri) throw new ConflictException('OAuth Google não configurado no ambiente');
@@ -69,14 +73,40 @@ export class GoogleService {
 
   async folders(userId: string, workspaceId: string, pageToken?: string, query?: string) {
     await this.owner(userId, workspaceId); const credentials = await this.credentials(workspaceId);
-    try { return await this.google.listFolders(credentials.accessToken, pageToken, query); } catch (error) { if (error instanceof GoogleApiError) mapGoogleError(error); throw error; }
+    try {
+      const result = await this.google.listFolders(credentials.accessToken, pageToken, query);
+      return {
+        ...result,
+        files: result.files.map(({ ownedByMe, sharedWithMeTime, ...folder }) => ({ ...folder, ownership: ownedByMe === true ? 'OWNED' as const : 'SHARED' as const })),
+      };
+    } catch (error) { if (error instanceof GoogleApiError) mapGoogleError(error); throw error; }
   }
 
   async folderLinks(userId: string, workspaceId: string) {
     await this.owner(userId, workspaceId);
     const connection = await this.prisma.integrationConnection.findUnique({ where: { workspaceId_kind: { workspaceId, kind: IntegrationKind.GOOGLE } } });
     if (!connection) throw new NotFoundException('Conexão Google não encontrada');
-    return this.prisma.googleDriveFolderLink.findMany({ where: { connectionId: connection.id }, orderBy: { name: 'asc' }, include: { _count: { select: { sources: true } } } });
+    return this.prisma.googleDriveFolderLink.findMany({ where: { connectionId: connection.id }, orderBy: { name: 'asc' }, include: { project: { select: { id: true, key: true, name: true } }, _count: { select: { sources: true } } } });
+  }
+
+  async syncRuns(userId: string, workspaceId: string, cursor?: string, limit = 12) {
+    await this.member(userId, workspaceId);
+    const take = Math.min(Math.max(limit || 12, 1), 50);
+    const rows = await this.prisma.googleDriveSyncRun.findMany({ where: { googleDriveFolderLink: { connection: { workspaceId } } }, orderBy: [{ startedAt: 'desc' }, { id: 'desc' }], take: take + 1, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), include: { googleDriveFolderLink: { select: { id: true, name: true, project: { select: { id: true, key: true, name: true } } } }, _count: { select: { items: true } } } });
+    const hasMore = rows.length > take;
+    const items = rows.slice(0, take).map(({ googleDriveFolderLink, _count, ...run }) => ({ ...run, folder: googleDriveFolderLink, itemCount: _count.items }));
+    return { items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null };
+  }
+
+  async syncRunItems(userId: string, workspaceId: string, runId: string, cursor?: string, limit = 20) {
+    await this.member(userId, workspaceId);
+    const run = await this.prisma.googleDriveSyncRun.findFirst({ where: { id: runId, googleDriveFolderLink: { connection: { workspaceId } } }, select: { id: true } });
+    if (!run) throw new NotFoundException('Sincronização não encontrada');
+    const take = Math.min(Math.max(limit || 20, 1), 50);
+    const rows = await this.prisma.googleDriveSyncRunItem.findMany({ where: { googleDriveSyncRunId: run.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: take + 1, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), include: { candidate: { select: { status: true, content: true, previousContent: true, previousTitle: true, updatedAt: true } } } });
+    const hasMore = rows.length > take;
+    const items = rows.slice(0, take);
+    return { items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null };
   }
 
   async linkFolder(userId: string, workspaceId: string, externalId: string, name: string, projectId: string) {

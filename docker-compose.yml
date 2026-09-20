@@ -22,6 +22,13 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-athena-local-access-secret-change-in-production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-athena-local-refresh-secret-change-in-production}
       COOKIE_SECURE: "false"
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      TERMS_URL: ${TERMS_URL:-https://example.com/termos}
+      PRIVACY_URL: ${PRIVACY_URL:-https://example.com/privacidade}
+      TERMS_VERSION: ${TERMS_VERSION:-1}
+      PRIVACY_VERSION: ${PRIVACY_VERSION:-1}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-llama3.2}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}

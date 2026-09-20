@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
-import { GoogleDriveOutboxOperation, GoogleDriveOutboxStatus, GoogleSyncStatus, IntegrationCandidateStatus, IntegrationKind, IntegrationStatus, Prisma, RequirementStatus, RequirementType, WorkspaceRole } from '@prisma/client';
+import { GoogleDriveOutboxOperation, GoogleDriveOutboxStatus, GoogleSyncStatus, IntegrationCandidateChangeType, IntegrationCandidateStatus, IntegrationKind, IntegrationStatus, Prisma, RequirementStatus, RequirementType, WorkspaceRole } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../core/prisma.service';
 import { AiAnalysisJobService } from '../ai/ai-analysis-job.service';
@@ -93,7 +93,9 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
     if (claimed.count !== 1) return { linkId: id, skipped: true };
     const link = await this.link(id);
     if (!link || !link.projectId || link.connection.status !== IntegrationStatus.CONNECTED) return { linkId: id, skipped: true };
+    const run = await this.prisma.googleDriveSyncRun.create({ data: { googleDriveFolderLinkId: id, status: GoogleSyncStatus.RUNNING } });
     let changed = 0;
+    let scanned = 0;
     try {
       const credentials = await this.integrations.activeCredentials(link.connection.workspaceId, IntegrationKind.GOOGLE);
       const rootFolderId = await this.ensureFolder(link, link.externalId, link.name, null, null);
@@ -107,9 +109,10 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
               const childFolderId = await this.ensureFolder(link, file.id, file.name, driveFolderId, athenaFolderId);
               await visit(file.id, childFolderId);
             } else if (READABLE_GOOGLE_MIME_TYPES.has(file.mimeType)) {
+              scanned += 1;
               seen.add(`google:drive:${file.id}`);
               const read = await this.google.readFile(credentials.accessToken, file);
-              if (await this.applyRemote(link, file, read.content, read.document ?? this.document(read.content), athenaFolderId)) changed += 1;
+              if (await this.applyRemote(link, run.id, file, read.content, read.document ?? this.document(read.content), athenaFolderId)) changed += 1;
             }
           }
           pageToken = page.nextPageToken;
@@ -117,11 +120,20 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
       };
       await visit(link.externalId, rootFolderId);
       changed += await this.archiveMissing(link, seen);
-      await this.prisma.googleDriveFolderLink.update({ where: { id }, data: { syncStatus: GoogleSyncStatus.COMPLETED, syncError: null, lastSyncedAt: new Date() } });
+      const completedAt = new Date();
+      await this.prisma.$transaction([
+        this.prisma.googleDriveFolderLink.update({ where: { id }, data: { syncStatus: GoogleSyncStatus.COMPLETED, syncError: null, lastSyncedAt: completedAt } }),
+        this.prisma.googleDriveSyncRun.update({ where: { id: run.id }, data: { status: GoogleSyncStatus.COMPLETED, completedAt, scannedCount: scanned, changedCount: changed } }),
+      ]);
       if (changed) void this.aiJobs.start(link.projectId);
-      return { linkId: id, changed, status: GoogleSyncStatus.COMPLETED };
+      return { linkId: id, runId: run.id, changed, scanned, status: GoogleSyncStatus.COMPLETED };
     } catch (error) {
-      await this.prisma.googleDriveFolderLink.update({ where: { id }, data: { syncStatus: GoogleSyncStatus.FAILED, syncError: (error instanceof Error ? error.message : 'Falha desconhecida').slice(0, 1000) } });
+      const message = (error instanceof Error ? error.message : 'Falha desconhecida').slice(0, 1000);
+      const completedAt = new Date();
+      await this.prisma.$transaction([
+        this.prisma.googleDriveFolderLink.update({ where: { id }, data: { syncStatus: GoogleSyncStatus.FAILED, syncError: message } }),
+        this.prisma.googleDriveSyncRun.update({ where: { id: run.id }, data: { status: GoogleSyncStatus.FAILED, error: message, completedAt, scannedCount: scanned, changedCount: changed } }),
+      ]);
       if (error instanceof GoogleApiError) throw error;
       throw error;
     }
@@ -135,9 +147,10 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
       update: { sourceId, title, content: payload, status: IntegrationCandidateStatus.ACCEPTED, externalVersion: version, fingerprint, reviewedAt: new Date() },
     });
     await this.prisma.integrationCandidateRevision.upsert({ where: { candidateId_fingerprint: { candidateId: candidate.id, fingerprint } }, create: { candidateId: candidate.id, externalVersion: version, title, content: payload, fingerprint }, update: {} });
+    return candidate;
   }
 
-  private async applyRemote(link: LinkedFolder, file: GoogleFile, text: string, document: Record<string, unknown>, folderId: string): Promise<boolean> {
+  private async applyRemote(link: LinkedFolder, runId: string, file: GoogleFile, text: string, document: Record<string, unknown>, folderId: string): Promise<boolean> {
     const externalId = `google:drive:${file.id}`;
     const fingerprint = this.remoteFingerprint(file, text);
     const source = await this.prisma.integrationSource.findUnique({ where: { connectionId_externalId: { connectionId: link.connectionId, externalId } }, include: { canonicalRequirement: true } });
@@ -156,7 +169,8 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
         return tx.requirement.create({ data: { projectId: link.projectId!, code: `US-${String(sequence.requirementSequence).padStart(3, '0')}`, type: RequirementType.USER_STORY, status: RequirementStatus.ACTIVE, title: file.name, content: document as Prisma.InputJsonValue, folderId, source: 'INTEGRATION:GOOGLE' } });
       });
       const linked = await this.prisma.integrationSource.upsert({ where: { connectionId_externalId: { connectionId: link.connectionId, externalId } }, create: { connectionId: link.connectionId, externalId, name: file.name, mimeType: file.mimeType, externalVersion: file.modifiedTime, lastSeenAt: new Date(), googleDriveFolderLinkId: link.id, canonicalRequirementId: requirement.id, lastRemoteFingerprint: fingerprint, lastRemoteModifiedAt: remoteAt }, update: { name: file.name, mimeType: file.mimeType, externalVersion: file.modifiedTime, lastSeenAt: new Date(), removedAt: null, googleDriveFolderLinkId: link.id, canonicalRequirementId: requirement.id, lastRemoteFingerprint: fingerprint, lastRemoteModifiedAt: remoteAt } });
-      await this.audit(link, externalId, linked.id, file.name, text, fingerprint, file.modifiedTime);
+      const candidate = await this.audit(link, externalId, linked.id, file.name, text, fingerprint, file.modifiedTime);
+      await this.recordRunItem(runId, candidate.id, linked.id, externalId, file.name, IntegrationCandidateChangeType.CREATED);
       return true;
     }
     const requirement = source.canonicalRequirement as CanonicalRequirement;
@@ -171,8 +185,17 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
       await tx.requirement.update({ where: { id: requirement.id }, data: { title: file.name, content: document as Prisma.InputJsonValue, folderId, status: RequirementStatus.ACTIVE, archivedAt: null, revision: { increment: 1 } } });
       await tx.integrationSource.update({ where: { id: source.id }, data: { name: file.name, mimeType: file.mimeType, externalVersion: file.modifiedTime, lastSeenAt: new Date(), removedAt: null, googleDriveFolderLinkId: link.id, lastRemoteFingerprint: fingerprint, lastRemoteModifiedAt: remoteAt } });
     });
-    await this.audit(link, externalId, source.id, file.name, text, fingerprint, file.modifiedTime);
+    const candidate = await this.audit(link, externalId, source.id, file.name, text, fingerprint, file.modifiedTime);
+    await this.recordRunItem(runId, candidate.id, source.id, externalId, file.name, IntegrationCandidateChangeType.UPDATED);
     return true;
+  }
+
+  private async recordRunItem(runId: string, candidateId: string, sourceId: string, externalId: string, title: string, changeType: IntegrationCandidateChangeType) {
+    await this.prisma.googleDriveSyncRunItem.upsert({
+      where: { googleDriveSyncRunId_externalId: { googleDriveSyncRunId: runId, externalId } },
+      create: { googleDriveSyncRunId: runId, candidateId, sourceId, externalId, title, changeType },
+      update: { candidateId, sourceId, title, changeType },
+    });
   }
 
   private async archiveMissing(link: LinkedFolder, seen: Set<string>) {

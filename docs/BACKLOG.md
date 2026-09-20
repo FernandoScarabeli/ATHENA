@@ -30,7 +30,6 @@ Fonte de escopo: [ATHENA_SPEC.md](ATHENA_SPEC.md). Cada ID aponta para uma spec 
 
 | ID | Capacidade | Prioridade relativa | Dependência principal |
 | --- | --- | --- | --- |
-| FUT-01 | Convites por e-mail e ciclo de acesso | Alta | Segurança e membros estabilizados |
 | FUT-02 | Upload de anexos binários | Alta | Política de armazenamento, malware e quotas |
 | FUT-03 | Edição simultânea de documentos | Média | Modelo de conflitos e presença em tempo real |
 | FUT-04 | Notificações por e-mail/push | Média | Preferências e infraestrutura de envio |

@@ -74,6 +74,16 @@ Todos os endpoints abaixo exigem `OWNER` no workspace.
 
 Papéis válidos: `OWNER`, `EDITOR`, `VIEWER`. Consulte a matriz em `DOMAIN_MODEL.md`.
 
+## Identidade, sessões e convites
+
+`POST /auth/register` recebe `name`, `email`, `password`, `passwordConfirmation`, `termsAccepted` e `returnTo?`; responde `202` e nunca abre sessão. A senha tem ao menos 12 caracteres e é conferida contra Pwned Passwords por range k-anônimo. `POST /auth/verify-email` confirma o token de uso único (24 h). `POST /auth/resend-verification` e `POST /auth/forgot-password` sempre respondem `202` sem enumerar contas. Reset (`POST /auth/reset-password`, token de 1 h) invalida todas as sessões.
+
+`POST /auth/login` cria cookies HttpOnly `athena_access` (15 min) e `athena_refresh`; o segundo é rotativo e vira cookie de sessão quando `remember=false`, ou dura 30 dias quando marcado. `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `GET /auth/sessions` e `DELETE /auth/sessions/:id` completam a gestão de dispositivos. Cada access token inclui um `sid`; o guard exige sessão persistida, não revogada, não expirada e usuário confirmado.
+
+Somente Owner cria convites: `POST /workspaces/:workspaceId/invites` recebe `email` e `role` (`EDITOR`/`VIEWER`); `GET` lista convites sem tokens; `POST /:id/resend` substitui o token e `DELETE /:id` revoga idempotentemente. `GET /invites/resolve?token=` retorna apenas workspace e papel. `POST /invites/accept` exige sessão confirmada no mesmo e-mail e cria a membership em transação.
+
+Em produção, configure um domínio remetente verificado no Resend e informe `RESEND_FROM` no formato `ATHENA <acesso@dominio-verificado>`, além de `RESEND_API_KEY`, `APP_ORIGIN`, URLs e versões de Termos/Privacidade. A API falha no boot se qualquer uma dessas variáveis estiver ausente. Em desenvolvimento, sem chave Resend, o envio é capturado explicitamente no log sem registrar token ou senha.
+
 ## Templates
 
 - `GET /workspaces/:workspaceId/templates` é leitura para qualquer membro.

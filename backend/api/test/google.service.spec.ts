@@ -20,6 +20,20 @@ describe('GoogleService', () => {
     prisma.googleOAuthState.findFirst.mockResolvedValue(null); await expect(service.callback('opaque', 'code')).rejects.toBeInstanceOf(BadRequestException);
   });
   it('imports explicitly selected files as pending candidates', async () => { const { service } = setup(); await expect(service.importFiles('u', 'w', ['doc-1'])).resolves.toMatchObject({ imported: [{ externalId: 'google:drive:doc-1' }], failed: [] }); });
+  it('separates folders owned by the connected account from shared folders', async () => {
+    const { service } = setup();
+    google.listFolders = jest.fn().mockResolvedValue({ files: [
+      { id: 'mine', name: 'Minha pasta', mimeType: 'application/vnd.google-apps.folder', ownedByMe: true },
+      { id: 'shared', name: 'Pasta compartilhada', mimeType: 'application/vnd.google-apps.folder', ownedByMe: false, sharedWithMeTime: '2026-09-20T00:00:00.000Z' },
+      { id: 'shared-drive', name: 'Drive compartilhado', mimeType: 'application/vnd.google-apps.folder' },
+    ] });
+    await expect(service.folders('u', 'w')).resolves.toMatchObject({ files: [
+      { id: 'mine', ownership: 'OWNED' },
+      { id: 'shared', ownership: 'SHARED' },
+      { id: 'shared-drive', ownership: 'SHARED' },
+    ] });
+    expect(google.listFolders).toHaveBeenCalledWith('access', undefined, undefined);
+  });
   it('does not import with a missing refreshable secret and keeps provider errors classified', async () => {
     const { service } = setup();
     integrations.activeCredentials.mockResolvedValueOnce({ accessToken: 'access', expiresAt: String(Date.now() - 1) });

@@ -162,7 +162,7 @@ export class IntegrationsService {
 
   async candidates(userId: string, workspaceId: string, status?: IntegrationCandidateStatus) {
     await this.member(userId, workspaceId);
-    return this.prisma.integrationCandidate.findMany({ where: { connection: { workspaceId }, ...(status ? { status } : {}) }, include: { source: true, revisions: { orderBy: { capturedAt: 'desc' }, take: 2 } }, orderBy: { updatedAt: 'desc' } });
+    return this.prisma.integrationCandidate.findMany({ where: { connection: { workspaceId }, ...(status ? { status } : {}) }, include: { connection: { select: { kind: true, workspaceId: true } }, source: true, revisions: { orderBy: { capturedAt: 'desc' }, take: 2 } }, orderBy: { updatedAt: 'desc' } });
   }
 
   async candidate(userId: string, id: string) {

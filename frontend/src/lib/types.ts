@@ -21,6 +21,7 @@ export type ReferenceType = SharedReferenceType;
 export type { CommentAnchor, CommentThreadStatus, NotificationType };
 
 export interface User { id: string; name: string; email: string }
+export interface AuthSession { id: string; persistent: boolean; createdAt: string; expiresAt: string }
 export interface Workspace { id: string; name: string; role?: WorkspaceRole }
 export interface Project { id: string; name: string; key: string }
 export interface WorkspaceSummary extends Workspace { role: WorkspaceRole; projects: Project[] }
@@ -184,13 +185,17 @@ export interface IntegrationCandidate {
   id: string;
   externalId: string;
   title: string;
-  content: { provider?: string; content?: string; mimeType?: string };
+  content: { provider?: string; content?: unknown; mimeType?: string };
   status: IntegrationCandidateStatus;
   changeType: IntegrationCandidateChangeType;
   externalVersion?: string | null;
   previousTitle?: string | null;
-  previousContent?: { provider?: string; content?: string; mimeType?: string } | null;
+  previousContent?: { provider?: string; content?: unknown; mimeType?: string } | null;
   updatedAt: string;
   source?: { name: string; removedAt?: string | null } | null;
-  connection: { kind: 'GITHUB' | 'GOOGLE'; workspaceId: string };
+  connection?: { kind: 'GITHUB' | 'GOOGLE'; workspaceId: string };
 }
+export type GoogleSyncStatus = 'RUNNING' | 'COMPLETED' | 'FAILED' | 'IDLE';
+export interface GoogleSyncRunItem { id: string; title: string; externalId: string; changeType: IntegrationCandidateChangeType; createdAt: string; candidate?: Pick<IntegrationCandidate, 'status' | 'content' | 'previousContent' | 'previousTitle' | 'updatedAt'> | null; }
+export interface GoogleSyncRun { id: string; status: GoogleSyncStatus; startedAt: string; completedAt?: string | null; scannedCount: number; changedCount: number; error?: string | null; itemCount: number; folder: { id: string; name: string; project?: Project | null }; }
+export interface CursorPage<T> { items: T[]; nextCursor: string | null; }

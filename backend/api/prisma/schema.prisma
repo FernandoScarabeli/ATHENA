@@ -108,6 +108,7 @@ model User {
   email String @unique
   name String
   passwordHash String
+  verifiedAt DateTime?
   createdAt DateTime @default(now())
   memberships WorkspaceMember[]
   activities ActivityLog[]
@@ -116,6 +117,12 @@ model User {
   commentMessages CommentMessage[]
   notifications Notification[]
   googleOAuthStates GoogleOAuthState[]
+  sessions AuthSession[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  legalAcceptances LegalAcceptance[]
+  sentInvites WorkspaceInvite[] @relation("inviteSender")
+  receivedInvites WorkspaceInvite[] @relation("inviteRecipient")
 }
 model Workspace {
   id String @id @default(uuid())
@@ -127,6 +134,86 @@ model Workspace {
   folders RequirementFolder[]
   integrations IntegrationConnection[]
   googleOAuthStates GoogleOAuthState[]
+  invites WorkspaceInvite[]
+}
+
+model AuthSession {
+  id String @id @default(uuid())
+  userId String
+  refreshHash String
+  persistent Boolean @default(false)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId, revokedAt])
+}
+
+model EmailVerificationToken {
+  id String @id @default(uuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  returnTo String?
+  createdAt DateTime @default(now())
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id String @id @default(uuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId, expiresAt])
+}
+
+model LegalAcceptance {
+  id String @id @default(uuid())
+  userId String
+  termsVersion String
+  privacyVersion String
+  origin String
+  acceptedAt DateTime @default(now())
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId, acceptedAt])
+}
+
+model AuthAttempt {
+  id String @id @default(uuid())
+  email String
+  origin String
+  action String
+  createdAt DateTime @default(now())
+  @@index([email, action, createdAt])
+  @@index([origin, action, createdAt])
+}
+
+model WorkspaceInvite {
+  id String @id @default(uuid())
+  workspaceId String
+  email String
+  role WorkspaceRole
+  tokenHash String @unique
+  senderId String
+  recipientId String?
+  expiresAt DateTime
+  acceptedAt DateTime?
+  revokedAt DateTime?
+  deliveryError String?
+  lastSentAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields:[workspaceId],references:[id],onDelete:Cascade)
+  sender User @relation("inviteSender",fields:[senderId],references:[id],onDelete:Cascade)
+  recipient User? @relation("inviteRecipient",fields:[recipientId],references:[id],onDelete:SetNull)
+  @@index([workspaceId, email])
+  @@index([email, expiresAt])
 }
 model WorkspaceMember {
   workspaceId String
@@ -316,6 +403,7 @@ model IntegrationSource {
   canonicalRequirement Requirement? @relation("canonicalIntegrationSource",fields:[canonicalRequirementId],references:[id],onDelete:SetNull)
   candidates IntegrationCandidate[]
   googleDriveOutbox GoogleDriveOutbox[]
+  googleDriveSyncRunItems GoogleDriveSyncRunItem[]
   @@unique([connectionId,externalId])
   @@index([connectionId,capturedAt])
   @@index([googleDriveFolderLinkId,removedAt])
@@ -338,9 +426,44 @@ model GoogleDriveFolderLink {
   sources IntegrationSource[]
   folderMappings GoogleDriveFolderMapping[]
   googleDriveOutbox GoogleDriveOutbox[]
+  syncRuns GoogleDriveSyncRun[]
   @@unique([connectionId,externalId])
   @@index([connectionId,updatedAt])
   @@index([projectId,syncStatus])
+}
+
+/// One durable execution of a linked Google Drive folder. It is separate from
+/// the link's current status so the integration audit can retain history.
+model GoogleDriveSyncRun {
+  id String @id @default(uuid())
+  googleDriveFolderLinkId String
+  status GoogleSyncStatus @default(RUNNING)
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  scannedCount Int @default(0)
+  changedCount Int @default(0)
+  error String?
+  googleDriveFolderLink GoogleDriveFolderLink @relation(fields:[googleDriveFolderLinkId],references:[id],onDelete:Cascade)
+  items GoogleDriveSyncRunItem[]
+  @@index([googleDriveFolderLinkId,startedAt])
+}
+
+/// Compact immutable audit entry; document content remains in the candidate
+/// and revision models instead of being duplicated at every poll.
+model GoogleDriveSyncRunItem {
+  id String @id @default(uuid())
+  googleDriveSyncRunId String
+  candidateId String?
+  sourceId String?
+  externalId String
+  title String
+  changeType IntegrationCandidateChangeType
+  createdAt DateTime @default(now())
+  googleDriveSyncRun GoogleDriveSyncRun @relation(fields:[googleDriveSyncRunId],references:[id],onDelete:Cascade)
+  candidate IntegrationCandidate? @relation(fields:[candidateId],references:[id],onDelete:SetNull)
+  source IntegrationSource? @relation(fields:[sourceId],references:[id],onDelete:SetNull)
+  @@unique([googleDriveSyncRunId,externalId])
+  @@index([googleDriveSyncRunId,createdAt])
 }
 
 /// Maps each Drive subfolder to the real nested folder shown in ATHENA.
@@ -402,6 +525,7 @@ model IntegrationCandidate {
   connection IntegrationConnection @relation(fields:[connectionId],references:[id],onDelete:Cascade)
   source IntegrationSource? @relation(fields:[sourceId],references:[id],onDelete:SetNull)
   revisions IntegrationCandidateRevision[]
+  googleDriveSyncRunItems GoogleDriveSyncRunItem[]
   @@unique([connectionId,externalId])
   @@index([connectionId,status])
 }

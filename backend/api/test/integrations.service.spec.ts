@@ -13,6 +13,7 @@ describe('IntegrationsService', () => {
         upsert: jest.fn().mockResolvedValue({ id: 'c', workspaceId: 'w', kind: IntegrationKind.GITHUB, status: IntegrationStatus.CONNECTED, accountLabel: 'acme', encryptedCredentials: 'ciphertext', connectedAt: null, disconnectedAt: null, createdAt: null, updatedAt: null }),
         update: jest.fn().mockResolvedValue({ id: 'c', workspaceId: 'w', kind: IntegrationKind.GITHUB, status: IntegrationStatus.DISCONNECTED, accountLabel: 'acme', encryptedCredentials: null, connectedAt: null, disconnectedAt: new Date(), createdAt: null, updatedAt: null }),
       },
+      integrationCandidate: { findMany: jest.fn().mockResolvedValue([]) },
     };
     return { service: new IntegrationsService(prisma, crypto), prisma };
   }
@@ -46,5 +47,13 @@ describe('IntegrationsService', () => {
     outsider.prisma.workspaceMember.findUnique.mockResolvedValue(null);
     await expect(outsider.service.list('u', 'w')).rejects.toBeInstanceOf(ForbiddenException);
     expect(outsider.prisma.integrationConnection.findMany).not.toHaveBeenCalled();
+  });
+
+  it('returns provider metadata with candidates used by the integration activity UI', async () => {
+    const { service, prisma } = setup();
+    await service.candidates('u', 'w');
+    expect(prisma.integrationCandidate.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ connection: { select: { kind: true, workspaceId: true } } }),
+    }));
   });
 });

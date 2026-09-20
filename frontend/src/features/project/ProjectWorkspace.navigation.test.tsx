@@ -46,6 +46,16 @@ const click = async (selector: string) => {
 };
 
 describe('project navigation', () => {
+  it('exposes device sessions from the profile menu and loads the security surface', async () => {
+    await mount();
+    await click('[aria-label="Meu perfil"]');
+    const security = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Segurança e sessões');
+    await act(async () => security?.click());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(host.textContent).toContain('Dispositivos e sessões');
+    expect(api).toHaveBeenCalledWith('/auth/sessions');
+  });
+
   it('moves from folders to focused graph, drawer, editor, and back without stale route history', async () => {
     await mount();
     await click('[data-testid="folders"] button');
