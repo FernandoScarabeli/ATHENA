@@ -46,20 +46,16 @@ export class AiSuggestionService {
     const existing = pairs.size ? await this.prisma.requirementRelation.findMany({ where: { type: RelationType.DEPENDS_ON, OR: [...pairs.values()].map(item => ({ sourceId: item.sourceRequirementId, targetId: item.targetRequirementId })) }, select: { sourceId: true, targetId: true } }) : [];
     const dismissed = pairs.size ? await this.prisma.aiSuggestion.findMany({ where: { relationType: RelationType.DEPENDS_ON, status: AiSuggestionStatus.DISMISSED, OR: [...pairs.values()].map(item => ({ requirementId: item.sourceRequirementId, targetRequirementId: item.targetRequirementId })) }, select: { requirementId: true, targetRequirementId: true } }) : [];
     const blocked = new Set([...existing.map(x => `${x.sourceId}:${x.targetId}`), ...dismissed.map(x => `${x.requirementId}:${x.targetRequirementId}`)]);
-    const data = [...pairs.entries()].filter(([key]) => !blocked.has(key)).map(([, item]) => ({ dependencyAnalysisId: analysisId, requirementId: item.sourceRequirementId, targetRequirementId: item.targetRequirementId, type: 'RELATION' as const, relationType: RelationType.DEPENDS_ON, confidence: item.confidence, justification: item.justification, status: AiSuggestionStatus.CONFIRMED }));
-    // The linked-folder flow applies provider results directly. We still keep
-    // confirmed rows as audit evidence, while a manually dismissed pair stays
-    // a durable suppression for future passes.
+    // Generation never mutates the canonical graph.  A proposal is deliberately
+    // kept pending until an editor approves it through decideOnce().
+    const data = [...pairs.entries()].filter(([key]) => !blocked.has(key)).map(([, item]) => ({ dependencyAnalysisId: analysisId, requirementId: item.sourceRequirementId, targetRequirementId: item.targetRequirementId, type: 'RELATION' as const, relationType: RelationType.DEPENDS_ON, confidence: item.confidence, justification: item.justification, status: AiSuggestionStatus.PENDING }));
     const bySource = new Map<string, typeof data>();
     data.forEach(item => bySource.set(item.requirementId, [...(bySource.get(item.requirementId) ?? []), item]));
     for (let index = 0; index < requirements.length; index += 1) {
       const sourceId = requirements[index].id;
       await this.prisma.$transaction(async tx => {
         const rows = bySource.get(sourceId);
-        if (rows?.length) {
-          await tx.aiSuggestion.createMany({ data: rows });
-          for (const row of rows) await tx.requirementRelation.upsert({ where: { sourceId_targetId_type: { sourceId: row.requirementId, targetId: row.targetRequirementId!, type: RelationType.DEPENDS_ON } }, create: { sourceId: row.requirementId, targetId: row.targetRequirementId!, type: RelationType.DEPENDS_ON }, update: {} });
-        }
+        if (rows?.length) await tx.aiSuggestion.createMany({ data: rows });
         await tx.dependencyAnalysis.update({ where: { id: analysisId }, data: { processedRequirements: index + 1 } });
       });
     }

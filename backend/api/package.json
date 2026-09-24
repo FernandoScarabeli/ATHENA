@@ -9,7 +9,8 @@
     "test": "jest --runInBand",
     "lint": "tsc --noEmit",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "evaluate:dependencies": "ts-node scripts/evaluate-dependencies.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

@@ -1,0 +1,17 @@
+origem,alvo,confianca,justificativa,evidencia
+DOC-066,DOC-004,ALTA,O cadastro de doença exige selecionar espécies cadastradas.,"War Room/Vacinação/OK - Doença.docx, CA 3: “Espécie — Seleção múltipla de entidade” e “Valores = espécies cadastradas no sistema”."
+DOC-068,DOC-066,ALTA,O cadastro de laboratório exige selecionar doenças cadastradas.,"War Room/Vacinação/OK - Laboratório.docx, CA 3: “Doença — Seleção múltipla de entidade” e “Valores = doenças cadastradas no sistema”."
+DOC-033,DOC-042,ALTA,O cadastro de infração exige selecionar um tipo de gerência cadastrado.,"War Room/Fiscalização/Administração/Infração.docx, CA 3: “Tipo de gerência — Seleção simples de entidade” e “Valores = tipos de gerência cadastrados no sistema”."
+DOC-040,DOC-041,ALTA,O cadastro do ciclo exige selecionar grupo de atividades.,"War Room/Fiscalização/Planejamento/Ciclo de Gestão.docx, CA 3: “Grupo de Atividades — Seleção Simples de Entidade”."
+DOC-040,DOC-039,ALTA,O cadastro do ciclo exige selecionar ação executora cadastrada.,"War Room/Fiscalização/Planejamento/Ciclo de Gestão.docx, CA 3: “Valores = todas as ações executoras cadastradas no sistema”."
+DOC-040,DOC-038,ALTA,O ciclo seleciona atividades de fiscalização cadastradas.,"War Room/Fiscalização/Planejamento/Ciclo de Gestão.docx, CA 6: “Valores = todas as atividades de fiscalização ...”."
+DOC-034,DOC-040,ALTA,O modelo exige selecionar ciclo de gestão cadastrado.,"War Room/Fiscalização/Administração/Modelo de Lista de Verificação.docx, CA 3: “Valores = ciclos de gestão cadastrados no sistema”."
+DOC-034,DOC-038,ALTA,O modelo exige atividade relacionada ao ciclo.,"War Room/Fiscalização/Administração/Modelo de Lista de Verificação.docx, CA 3: “Valores = atividades ... relacionadas ao ciclo de gestão selecionado”."
+DOC-036,DOC-040,ALTA,A lista de verificação exige selecionar ciclo de gestão.,"War Room/Fiscalização/Lista de Verificação.docx, CA 3: “Valores = ciclos de gestão ativos cadastrados no sistema”."
+DOC-036,DOC-038,ALTA,A lista de verificação exige atividade vinculada ao ciclo.,"War Room/Fiscalização/Lista de Verificação.docx, CA 3: “Valores = atividades ... que tenham relação com o ciclo de gestão selecionado”."
+DOC-037,DOC-040,ALTA,A ordem de serviço consome ciclos de gestão cadastrados.,"War Room/Fiscalização/Ordem de Serviço/Ordem de Serviço.docx, CA 1: “Valores = ciclos de gestão cadastrados no sistema”."
+DOC-037,DOC-038,ALTA,A ordem de serviço consome atividades ligadas ao ciclo selecionado.,"War Room/Fiscalização/Ordem de Serviço/Ordem de Serviço.docx, CA 1: “Valores = atividades de fiscalização com relação com o Ciclo de Gestão selecionado”."
+DOC-035,DOC-042,ALTA,O auto de infração exige selecionar tipo de gerência cadastrado.,"War Room/Fiscalização/Auto de Infração.docx, CA 1: “Valores = tipos de gerência cadastrados no sistema”."
+DOC-035,DOC-033,ALTA,O auto de infração exige selecionar infração cadastrada.,"War Room/Fiscalização/Auto de Infração.docx, CA 1: “Infração — Seleção simples de entidade” e “Valores = infrações cadastradas no sistema”."
+DOC-035,DOC-036,ALTA,O auto de infração consome listas de verificação cadastradas.,"War Room/Fiscalização/Auto de Infração.docx, CA 3: “Valores = listas de verificação cadastradas no sistema”."
+

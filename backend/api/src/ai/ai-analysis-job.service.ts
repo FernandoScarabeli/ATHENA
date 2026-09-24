@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import { AiProvider, DependencyResponse } from './ai.provider';
 import { AiSuggestionService } from './ai-suggestion.service';
 import { PrismaService } from '../core/prisma.service';
@@ -53,11 +54,16 @@ export class AiAnalysisJobService implements OnApplicationBootstrap {
       const context = await this.context(analysis.projectId);
       const stories = await this.index(context.requirements);
       const dependencies: DependencyResponse['dependencies'] = [];
-      const groups = this.groups(stories, context);
+      const groups = await this.groups(stories, context);
       for (const group of groups) {
-        const response = await this.provider.analyseDependencies(group);
+        let response: DependencyResponse | null = null;
+        for (let attempt = 0; attempt < 2 && !response; attempt += 1) {
+          try { response = await this.provider.analyseDependencies(group); }
+          catch (error) { this.logger.warn(`dependency source ${group.sources[0].code} attempt ${attempt + 1}/2 failed: ${error instanceof Error ? error.message : 'unknown error'}`); }
+        }
+        if (!response) continue; // an isolated local-model failure must not abort the pass
         const allowed = new Set(group.sources.flatMap(source => source.candidates.map(candidate => `${source.id}:${candidate.id}`)));
-        for (const dependency of response.dependencies) if (allowed.has(`${dependency.sourceRequirementId}:${dependency.targetRequirementId}`)) dependencies.push(dependency);
+        for (const dependency of response.dependencies) if (dependency.confidence >= 0.80 && allowed.has(`${dependency.sourceRequirementId}:${dependency.targetRequirementId}`)) dependencies.push(dependency);
       }
       await this.prisma.dependencyAnalysis.update({ where: { id: analysisId }, data: { status: 'PERSISTING' } });
       const count = await this.suggestions.persistDependencies(analysisId, { dependencies });
@@ -71,6 +77,9 @@ export class AiAnalysisJobService implements OnApplicationBootstrap {
   private split(text: string, size = 1200) { const words = text.split(/\s+/).filter(Boolean); const chunks: string[] = []; let current = ''; for (const word of words) { if (current && current.length + word.length + 1 > size) { chunks.push(current); current = word; } else current += `${current ? ' ' : ''}${word}`; } if (current) chunks.push(current); return chunks.length ? chunks : ['']; }
   private average(vectors: number[][]) { const result = new Array(vectors[0]?.length ?? 0).fill(0); vectors.forEach(vector => vector.forEach((value, index) => { result[index] += value; })); const length = Math.hypot(...result) || 1; return result.map(value => value / length); }
   private cosine(a: number[], b: number[]) { return a.reduce((sum, value, index) => sum + value * (b[index] ?? 0), 0); }
+  private embeddingModel() { return process.env.OLLAMA_EMBEDDING_MODEL ?? 'nomic-embed-text'; }
+  private hash(text: string) { return createHash('sha256').update(text).digest('hex'); }
+  private vector(value: number[]) { return `[${value.join(',')}]`; }
   private async index(stories: Story[]) {
     const pieces = stories.flatMap(story => story.chunks.map(chunk => ({ story, chunk: `${story.code} ${story.title}\n${chunk}` })));
     const vectors: number[][] = [];
@@ -80,25 +89,53 @@ export class AiAnalysisJobService implements OnApplicationBootstrap {
     for (let index = 0; index < pieces.length; index += 6) vectors.push(...await this.provider!.embedMany(pieces.slice(index, index + 6).map(item => item.chunk)));
     const byStory = new Map<Story, number[][]>();
     pieces.forEach((piece, index) => byStory.set(piece.story, [...(byStory.get(piece.story) ?? []), vectors[index]]));
-    return stories.map(story => ({ ...story, vector: this.average(byStory.get(story) ?? [[]]) }));
+    const indexed = stories.map(story => ({ ...story, vector: this.average(byStory.get(story) ?? [[]]) }));
+    await Promise.all(indexed.map(async story => {
+      const chunks = story.chunks.map((content, ordinal) => ({ content, ordinal, hash: this.hash(content) }));
+      const existing = await this.prisma.$queryRawUnsafe<Array<{ ordinal: number; contentHash: string }>>(
+        'SELECT "ordinal", "contentHash" FROM "RequirementEmbeddingChunk" WHERE "requirementId" = $1 AND "embeddingModel" = $2 ORDER BY "ordinal"', story.id, this.embeddingModel());
+      if (existing.length === chunks.length && existing.every((row, index) => row.ordinal === chunks[index].ordinal && row.contentHash === chunks[index].hash)) return;
+      await this.prisma.$executeRawUnsafe('DELETE FROM "RequirementEmbeddingChunk" WHERE "requirementId" = $1 AND "embeddingModel" = $2', story.id, this.embeddingModel());
+      const vectorsForStory = byStory.get(story) ?? [];
+      for (const [ordinal, chunk] of chunks.entries()) await this.prisma.$executeRawUnsafe(
+        'INSERT INTO "RequirementEmbeddingChunk" ("id", "requirementId", "ordinal", "content", "contentHash", "embeddingModel", "embedding", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7::vector, NOW(), NOW())',
+        randomUUID(), story.id, ordinal, chunk.content, chunk.hash, this.embeddingModel(), this.vector(vectorsForStory[ordinal]));
+    }));
+    return indexed;
   }
   private evidence(story: Story) { return story.chunks.slice(0, 2).join(' ').slice(0, 1100); }
-  private groups(stories: Story[], context: Awaited<ReturnType<AiAnalysisJobService['context']>>) {
+  private async retrievedCandidates(source: Story, eligible: Story[]) {
+    if (!source.vector || !eligible.length) return [];
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ requirementId: string; similarity: number }>>(
+      'SELECT "requirementId", 1 - ("embedding" <=> $1::vector) AS similarity FROM "RequirementEmbeddingChunk" WHERE "embeddingModel" = $2 AND "requirementId" <> $3 ORDER BY "embedding" <=> $1::vector LIMIT 36',
+      this.vector(source.vector), this.embeddingModel(), source.id);
+    const allowed = new Set(eligible.map(item => item.id));
+    const minimum = [0.55, 0.60, 0.65, 0.70].includes(Number(process.env.DEPENDENCY_RAG_MIN_SIMILARITY)) ? Number(process.env.DEPENDENCY_RAG_MIN_SIMILARITY) : 0.60;
+    const best = new Map<string, number>();
+    rows.forEach(row => { if (allowed.has(row.requirementId) && row.similarity >= minimum) best.set(row.requirementId, Math.max(best.get(row.requirementId) ?? -1, row.similarity)); });
+    return eligible.filter(item => best.has(item.id)).sort((a, b) => (best.get(b.id) ?? 0) - (best.get(a.id) ?? 0)).slice(0, 6);
+  }
+  private async groups(stories: Story[], context: Awaited<ReturnType<AiAnalysisJobService['context']>>) {
     const rejected = new Set(context.dismissedDependencies.map(item => `${item.requirementId}:${item.targetRequirementId}`));
     const confirmed = new Set(context.confirmedDependencies.map(item => `${item.sourceId}:${item.targetId}`));
-    const sourceContexts = stories.map(source => {
+    const sourceContexts = await Promise.all(stories.map(async source => {
       const eligible = stories.filter(target => target.id !== source.id && !rejected.has(`${source.id}:${target.id}`) && !confirmed.has(`${source.id}:${target.id}`));
-      const semantic = eligible.slice().sort((a, b) => this.cosine(b.vector!, source.vector!) - this.cosine(a.vector!, source.vector!)).slice(0, Math.min(4, eligible.length));
+      const semantic = await this.retrievedCandidates(source, eligible);
       // Explicit US references are deterministic candidates even when their
       // wording is too different for semantic similarity to rank them high.
-      const mentioned = new Set((source.text.match(/\bUS-\d+\b/gi) ?? []).map(code => code.toUpperCase()));
+      const mentioned = new Set(stories.filter(target => target.id !== source.id && new RegExp(`(^|[^A-Za-z0-9_-])${target.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^A-Za-z0-9_-])`, 'i').test(source.text)).map(target => target.code.toUpperCase()));
       const candidates = [...new Map([...eligible.filter(target => mentioned.has(target.code.toUpperCase())), ...semantic].map(target => [target.id, target])).values()];
       return { id: source.id, code: source.code, title: source.title, evidence: this.evidence(source).slice(0, 420), candidates: candidates.map(target => ({ id: target.id, code: target.code, title: target.title, evidence: this.evidence(target).slice(0, 120) })) };
-    });
+    }));
     // One origin per generation is intentional. It bounds the local CPU work
     // even for a project imported from large DOCX files, while all origins are
     // still evaluated in the same pass.
-    const groups = []; for (let index = 0; index < sourceContexts.length; index += 1) groups.push({ project: context.project, sources: sourceContexts.slice(index, index + 1), confirmedDependencies: context.confirmedDependencies, dismissedDependencies: context.dismissedDependencies }); return groups;
+    const groups = []; for (let index = 0; index < sourceContexts.length; index += 1) {
+      const source = sourceContexts[index];
+      // Do not leak the project history into each Ollama call: only this
+      // origin's prior decisions are relevant evidence for the model.
+      groups.push({ project: context.project, sources: [source], confirmedDependencies: context.confirmedDependencies.filter(item => item.sourceId === source.id), dismissedDependencies: context.dismissedDependencies.filter(item => item.requirementId === source.id) });
+    } return groups;
   }
   private async context(projectId: string) {
     const [project, requirements, confirmed, dismissed] = await Promise.all([

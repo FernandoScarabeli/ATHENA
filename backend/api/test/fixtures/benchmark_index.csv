@@ -1,0 +1,85 @@
+id_benchmark,codigo_original,status_documento,titulo,arquivo_origem
+DOC-001,,ACTIVE,Aba: Raça,War Room/Animal/Aba_ Raça.docx
+DOC-002,,ACTIVE,Classificação Sanitária por Estado,War Room/Animal/Administração/Classificação Sanitária por Estado.docx
+DOC-003,,ACTIVE,Status Animal,War Room/Animal/Administração/Status Animal.docx
+DOC-004,,ACTIVE,Espécie,War Room/Animal/Espécie.docx
+DOC-005,,ACTIVE,Aba: Estabelecimentos Relacionados,War Room/Animal/Estabelecimentos Relacionados de Estabelecimento Agroindustrial POA — SIE_MG.docx
+DOC-006,,ACTIVE,Passaporte Equestre,War Room/Animal/Passaporte Equestre.docx
+DOC-007,,ACTIVE,Notificações dos Estabelecimentos,War Room/Arrecadação/Administração/Notificações dos Estabelecimentos.docx
+DOC-008,,ACTIVE,DAE,War Room/Arrecadação/DAE.docx
+DOC-009,,ACTIVE,Fundo de Arrecadação,War Room/Arrecadação/Fundo de Arrecadação.docx
+DOC-010,,ACTIVE,Lote de Pagamento,War Room/Arrecadação/Lote de Pagamento.docx
+DOC-011,,ACTIVE,Opção de Recolhimento,War Room/Arrecadação/Opção de Recolhimento.docx
+DOC-012,,ACTIVE,Receita,War Room/Arrecadação/Receita.docx
+DOC-013,,ACTIVE,Recolhimento Mensal de GTAs,War Room/Arrecadação/Recolhimento Mensal de GTAs Emitidas ou Recebidas.docx
+DOC-014,,ACTIVE,Relatório de Boletos,War Room/Arrecadação/Relatório de Boletos.docx
+DOC-015,,ACTIVE,Taxa de Emissão de Documento Sanitário,War Room/Arrecadação/Taxa de Emissão de Documento Sanitário.docx
+DOC-016,,ACTIVE,Distribuição de Formulários de GTA,War Room/Arrecadação/Venda de GTA/Distribuição de Formulários de GTA.docx
+DOC-017,,ACTIVE,Registro de Venda de GTA Digital,War Room/Arrecadação/Venda de GTA/Registro de Venda de GTA Digital.docx
+DOC-018,,ACTIVE,Registro de Venda de GTA Física,War Room/Arrecadação/Venda de GTA/Registro de Venda de GTA Física.docx
+DOC-019,,ACTIVE,Índice,War Room/Arrecadação/Índice.docx
+DOC-020,,ACTIVE,Consentimentos das Entidades,War Room/Controle/Consentimentos das Entidades.docx
+DOC-021,,OBSOLETE,Integradora e Cooperativa,War Room/Controle/Obsoletas/Acesso Sidagro Integradora e Cooperativa.docx
+DOC-022,,OBSOLETE,Acesso ao Portal do Produtor,War Room/Controle/Obsoletas/Acesso ao Portal do Produtor.docx
+DOC-023,,ACTIVE,Aba: Papéis do Usuário,War Room/Controle/Papéis do Usuário.docx
+DOC-024,,ACTIVE,Parâmetros do Sistema,War Room/Controle/Parâmetros do Sistema.docx
+DOC-025,,ACTIVE,Tela Inicial,War Room/Controle/Tela Inicial.docx
+DOC-026,,ACTIVE,Ajuste de Doses de Insumo,War Room/Exame/Ajuste de Doses de Insumos.docx
+DOC-027,,ACTIVE,Atestado de Exame,War Room/Exame/Atestado de Exame.docx
+DOC-028,,ACTIVE,Local de Realização de Exame,War Room/Exame/Local de Realização de Exame.docx
+DOC-029,,ACTIVE,Tipo de Atestado,War Room/Exame/Tipo de Atestado.docx
+DOC-030,,ACTIVE,Tipo de Insumo,War Room/Exame/Tipo de Insumo.docx
+DOC-031,,ACTIVE,Venda com Entrada de Insumo,War Room/Exame/Venda com Entrada de Insumo.docx
+DOC-032,,ACTIVE,Venda com Saída de Insumo,War Room/Exame/Venda com Saída de Insumo.docx
+DOC-033,,ACTIVE,Infração,War Room/Fiscalização/Administração/Infração.docx
+DOC-034,,ACTIVE,Modelo de Lista de Verificação,War Room/Fiscalização/Administração/Modelo de Lista de Verificação.docx
+DOC-035,,ACTIVE,Auto de Infração,War Room/Fiscalização/Auto de Infração.docx
+DOC-036,,ACTIVE,Lista de Verificação,War Room/Fiscalização/Lista de Verificação.docx
+DOC-037,,ACTIVE,Ordem de Serviço,War Room/Fiscalização/Ordem de Serviço/Ordem de Serviço.docx
+DOC-038,,ACTIVE,Atividade de Fiscalização,War Room/Fiscalização/Planejamento/Atividade de Fiscalização.docx
+DOC-039,,ACTIVE,Ação Executora,War Room/Fiscalização/Planejamento/Ação Executora.docx
+DOC-040,,ACTIVE,Ciclo de Gestão,War Room/Fiscalização/Planejamento/Ciclo de Gestão.docx
+DOC-041,,ACTIVE,Grupo de Atividades,War Room/Fiscalização/Planejamento/Grupo de Atividades.docx
+DOC-042,,ACTIVE,Tipo de Gerência,War Room/Fiscalização/Tipo de Gerência.docx
+DOC-043,,ACTIVE,Emissão de ATA,War Room/GTA/Emissão de ATA.docx
+DOC-044,,ACTIVE,Emissão de GTA,War Room/GTA/Emissão de GTA - Bovinos e Bubalinos.docx
+DOC-045,,ACTIVE,Emissão de GTA,War Room/GTA/Emissão de GTA.docx
+DOC-046,,ACTIVE,Finalidade de trânsito,War Room/GTA/Finalidade de trânsito.docx
+DOC-047,,OBSOLETE,Isenção de Taxa de Documento Sanitário,War Room/GTA/Obsoletas/Isenção de Taxa de Documento Sanitário.docx
+US0GXX,US0GXX,OBSOLETE,Emissão de GTA,War Room/GTA/Obsoletas/US0GXX - Emissão de GTA (Antiga).docx
+US0RX,US0RX,OBSOLETE,Motivo de Cancelamento de GTA,War Room/GTA/Obsoletas/US0GXX - Motivo de Cancelamento de GTA.docx
+US0V12,US0V12,ACTIVE,Validações de doença para GTA,War Room/GTA/USV11 - Validações de doença para GTA.docx
+DOC-048,,UNKNOWN,Central de Pendências,War Room/Geral/(Alterando) Central de Pendências.docx
+DOC-049,,ACTIVE,Açougue,War Room/Geral/Açougue.docx
+DOC-050,,ACTIVE,Central de Pendências,War Room/Geral/Central de Pendências.docx
+DOC-051,,ACTIVE,Estabelecimento Genérico,War Room/Geral/Estabelecimento Genérico.docx
+DOC-052,,ACTIVE,Instituição de Ensino e Pesquisa,War Room/Geral/Instituição de Ensino e Pesquisa.docx
+DOC-053,,ACTIVE,Local de Pesagem,War Room/Geral/Local de Pesagem.docx
+DOC-054,,ACTIVE,Aba: Municípios Relacionados,War Room/Geral/Municípios Relacionados das Unidades Administrativas.docx
+DOC-055,,ACTIVE,Unidade de Vigilância Agropecuária,War Room/Geral/Unidade de Vigilância Agropecuária.docx
+DOC-056,,ACTIVE,Venda de Propriedade,War Room/Geral/Venda de Propriedade.docx
+DOC-057,,UNKNOWN,Laboratório,War Room/Templates/Template completo com exemplo (laboratório).docx
+DOC-058,,ACTIVE,Entrada de GTA de Outros Estados,War Room/Trânsito/Animal/Entrada de GTA de Outros Estados.docx
+DOC-059,,ACTIVE,Emissão de CFO,War Room/Trânsito/Vegetal/Emissão de CFO.docx
+DOC-060,,ACTIVE,Emissão de CFOC,War Room/Trânsito/Vegetal/Emissão de CFOC.docx
+DOC-061,,ACTIVE,Emissão de PTV,War Room/Trânsito/Vegetal/Emissão de PTV.docx
+DOC-062,,ACTIVE,Entrada de PTV de Outros Estados,War Room/Trânsito/Vegetal/Entrada de PTV de Outros Estados.docx
+DOC-063,,ACTIVE,Ajuste de doses de vacina,War Room/Vacinação/OK - Ajuste de doses de vacina.docx
+DOC-064,,ACTIVE,Declaração de vacinação,War Room/Vacinação/OK - Declaração de vacinação.docx
+DOC-065,,ACTIVE,Doação/partilha de vacina,War Room/Vacinação/OK - Doação_partilha de vacina.docx
+DOC-066,US087,ACTIVE,Doença,War Room/Vacinação/OK - Doença.docx
+DOC-067,,ACTIVE,Etapa de vacinação,War Room/Vacinação/OK - Etapa de vacinação.docx
+DOC-068,US0V3,ACTIVE,Laboratório,War Room/Vacinação/OK - Laboratório.docx
+DOC-069,,ACTIVE,Venda com saída de vacina,War Room/Vacinação/OK - Venda com saída de vacina.docx
+DOC-070,US087,OBSOLETE,Doença,War Room/Vacinação/Obsoletas - Outras/US087 - Doença.docx
+US0V5,US0V5,OBSOLETE,"Gerenciar venda de vacina para produtores, vacinadores ou médicos veterinários","War Room/Vacinação/Obsoletas - Outras/US0V5 - Gerenciar venda de vacina para produtores, vacinadores ou médicos veterinários (obsoleta).docx"
+US0V6,US0V6,OBSOLETE,Gerenciar venda de vacina entre revendedoras,War Room/Vacinação/Obsoletas - Outras/US0V6 - Gerenciar venda de vacina entre revendedoras (obsoleta).docx
+USV09,USV09,OBSOLETE,Autorização de vacina,War Room/Vacinação/Obsoletas - Outras/US0V9 - Autorização de vacinação.docx
+DOC-071,,OBSOLETE,Vacinação Oficial,War Room/Vacinação/Obsoletas - Outras/Vacinação Oficial.docx
+DOC-072,US0V3,OBSOLETE,Laboratório,War Room/Vacinação/Obsoletas - Outras/[SIMPLES] US0V3 - Laboratório.docx
+DOC-073,,ACTIVE,Tipo de Vacina,War Room/Vacinação/Ok - Tipo de Vacina.docx
+DOC-074,,ACTIVE,Venda com entrada de vacina,War Room/Vacinação/Ok - Venda com entrada de vacina.docx
+DOC-075,,ACTIVE,Certificação do Produto,War Room/Vegetal/Cadastros/Administração/Certificação do Produto.docx
+DOC-076,,ACTIVE,Declaração Adicional,War Room/Vegetal/Cadastros/Administração/Declaração Adicional.docx
+DOC-077,,ACTIVE,Formação de Lote,War Room/Vegetal/Cadastros/Formação de Lote.docx
+

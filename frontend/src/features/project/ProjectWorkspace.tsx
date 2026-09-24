@@ -166,7 +166,7 @@ function DependencyAnalysisCard({ analysis }: { analysis?: DependencyAnalysis | 
   if (!analysis) return null;
   if (analysis.status === 'COMPLETED' && analysis.suggestionsFound === 0) return null;
   const active = ['QUEUED', 'READING', 'PERSISTING'].includes(analysis.status);
-  const label = analysis.status === 'READING' ? `Lendo ${analysis.totalRequirements} US` : analysis.status === 'PERSISTING' ? 'Aplicando dependências ao mapa' : analysis.status === 'QUEUED' ? 'Analisando dependências' : analysis.status === 'FAILED' ? 'Não foi possível analisar dependências' : `${analysis.suggestionsFound} dependências aplicadas ao mapa`;
+  const label = analysis.status === 'READING' ? `Lendo ${analysis.totalRequirements} US` : analysis.status === 'PERSISTING' ? 'Salvando sugestões para revisão' : analysis.status === 'QUEUED' ? 'Analisando dependências' : analysis.status === 'FAILED' ? 'Não foi possível analisar dependências' : `${analysis.suggestionsFound} sugestões para revisar`;
   const progress = analysis.totalRequirements ? Math.round((analysis.processedRequirements / analysis.totalRequirements) * 100) : 100;
   return <div className={`dependency-analysis-card ${active ? 'is-active' : ''} ${analysis.status === 'FAILED' ? 'is-failed' : ''}`} aria-live="polite"><span><strong>{label}</strong><small>{analysis.status === 'FAILED' ? analysis.error : `${analysis.processedRequirements} / ${analysis.totalRequirements} US`}</small></span>{active && <i className="dependency-progress"><b style={{ width: analysis.status === 'READING' ? undefined : `${progress}%` }}/></i>}</div>;
 }
