@@ -2,6 +2,10 @@
 
 `User` pertence a um `Workspace` por `WorkspaceMember`. A membership contém um papel (`OWNER`, `EDITOR` ou `VIEWER`) e é a fronteira de autorização: um `Project` pertence ao workspace e um `Requirement` pertence ao projeto.
 
+## Identidade e acesso
+
+Uma conta tem e-mail normalizado, hash Argon2id, confirmação de e-mail e registros de aceite legal versionados. `AuthSession` mantém somente o hash do segredo de refresh, expiração, persistência e revogação; o JWT de acesso referencia a sessão por `sid`. Tokens de confirmação e reset persistem somente SHA-256 e são de uso único. `WorkspaceInvite` mantém destinatário, papel `EDITOR`/`VIEWER`, emissor, hash de token, expiração, estado de entrega/revogação/aceite e o usuário que aceitou; ele não cria membership antes do aceite.
+
 ## Requisitos e rastreabilidade
 
 - `Requirement` guarda código `US-*`, título, documento TipTap JSON, pasta, status e `revision`. Todos os requisitos têm tipo `USER_STORY`; prioridade, tags livres e User Story separada não existem mais.

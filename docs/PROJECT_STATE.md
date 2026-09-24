@@ -3,7 +3,7 @@
 ## Entregue
 
 - Monorepo PNPM organizado em `frontend/` (React), `backend/api/` (NestJS), `ai/` (providers e operações de IA), `packages/shared/` (contratos) e `docs/`.
-- Núcleo persistente: autenticação por cookies, workspaces, projetos, requisitos, critérios, revisões, relações e grafo.
+- Núcleo persistente: autenticação por cookies, confirmação de e-mail, recuperação de senha, sessões rotativas por dispositivo, convites Resend, workspaces, projetos, requisitos, critérios, revisões, relações e grafo.
 - Editor de requisito com TipTap Community: documento JSON persistido, toolbar de formatação estilo Docs, salvamento explícito, revisão otimista, recuperação de conflito e proteção contra saída com alterações não salvas.
 - Colaboração de workspace: papéis `OWNER`, `EDITOR` e `VIEWER`; gestão de membros pelo Owner; templates do workspace; referências de protótipo/anexo existentes; comentários em thread, menções e notificações internas. `VIEWER` lê e comenta, mas não edita.
 - User Story estruturada e critérios de aceite enriquecidos para representar cenários `Dado / Quando / Então`, além de tabelas de especificação no documento.
@@ -13,7 +13,7 @@
 ## Limites deliberados do passe colaborativo
 
 - Um requisito é editado por uma pessoa por vez. O controle de revisão impede sobrescrita, mas não há colaboração de texto em tempo real.
-- Convites por e-mail, anexos binários, notificações por e-mail/push, upload, permissões por projeto e templates globais ficam fora deste passe.
+- Anexos binários, notificações por e-mail/push além das mensagens transacionais de acesso, upload, permissões por projeto e templates globais ficam fora deste passe.
 - Um template é exclusivo do workspace, é aplicado como cópia independente e não carrega código, status, prioridade, comentários ou histórico do requisito de origem.
 
 ## Próximos marcos

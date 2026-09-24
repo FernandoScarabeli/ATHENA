@@ -24,6 +24,13 @@ Este documento é a fonte de verdade das regras de produto da reformulação atu
 - `VIEWER` lê e comenta, mas não edita.
 - `COMMENTER` é uma nomenclatura obsoleta e não representa um papel atual.
 
+## Identidade e convites
+
+- Cadastro é público, requer nome, senha de no mínimo 12 caracteres, aceite versionado de Termos/Privacidade e confirmação de e-mail; nunca cria workspace automaticamente.
+- Login só é permitido para contas confirmadas. Refresh é rotativo por sessão/dispositivo; redefinir senha revoga todas as sessões.
+- E-mails de confirmação, reset e convite usam Resend, tokens de alta entropia e links absolutos. Em desenvolvimento o envio é explicitamente capturado; produção exige `APP_ORIGIN`, `RESEND_API_KEY` e `RESEND_FROM`.
+- Somente `OWNER` convida, reenvia e revoga. Convites expiram em sete dias, não aceitam `OWNER` como papel e exigem conta confirmada no mesmo e-mail antes de criar a membership.
+
 ## Pastas
 
 - Cada US pertence a uma única pasta do workspace.

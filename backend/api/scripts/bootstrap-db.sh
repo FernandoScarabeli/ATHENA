@@ -11,7 +11,7 @@ set -eu
 # passes Nest's watch command after the script so both modes use the same safe
 # database bridge.
 if [ "$#" -eq 0 ]; then
-  set -- node backend/api/dist/main
+  set -- node backend/api/.athena-build/main
 fi
 
 exec "$@"

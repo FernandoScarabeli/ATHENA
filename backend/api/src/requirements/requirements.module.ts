@@ -12,13 +12,14 @@ import { IntegrationsService } from '../integrations/integrations.service';
 import { GithubAdapter } from '../integrations/github.adapter';
 import { GithubService } from '../integrations/github.service';
 import { GoogleAdapter } from '../integrations/google.adapter';
+import { GoogleCredentialsService } from '../integrations/google-credentials.service';
 import { GoogleService } from '../integrations/google.service';
 import { GoogleOAuthController } from '../integrations/google.controller';
 import { GoogleSyncService } from '../integrations/google-sync.service';
 
 @Module({
   imports: [AuthModule, JwtModule.register({})],
-  providers: [RequirementsService, AiSuggestionService, AiAnalysisJobService, IntegrationCrypto, IntegrationsService, GithubAdapter, GithubService, GoogleAdapter, GoogleService, GoogleSyncService, { provide: AI_PROVIDER, useFactory: (): AiProvider | null => { const configured = (process.env.AI_PROVIDER ?? 'disabled').trim().toLowerCase(); return configured === 'ollama' ? new OllamaProvider() : null; } }],
+  providers: [RequirementsService, AiSuggestionService, AiAnalysisJobService, IntegrationCrypto, IntegrationsService, GithubAdapter, GithubService, GoogleAdapter, GoogleCredentialsService, GoogleService, GoogleSyncService, { provide: AI_PROVIDER, useFactory: (): AiProvider | null => { const configured = (process.env.AI_PROVIDER ?? 'disabled').trim().toLowerCase(); return configured === 'ollama' ? new OllamaProvider() : null; } }],
   exports: [AiSuggestionService, AiAnalysisJobService, IntegrationsService, GithubService, GoogleService, GoogleSyncService],
   controllers: [RequirementsController, WorkspaceController, GoogleOAuthController],
 })

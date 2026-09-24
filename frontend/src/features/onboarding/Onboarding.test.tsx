@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals(); });
 
-const mount = async () => { await act(async () => root.render(<QueryClientProvider client={client}><Onboarding user={user} onLogout={vi.fn()}/></QueryClientProvider>)); };
+const mount = async () => { await act(async () => root.render(<QueryClientProvider client={client}><Onboarding user={user} theme="light" onThemeChange={vi.fn()} onLogout={vi.fn()}/></QueryClientProvider>)); };
 const settle = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); }); };
 
 describe('direct project routes', () => {

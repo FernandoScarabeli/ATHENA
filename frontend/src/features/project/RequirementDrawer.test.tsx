@@ -59,12 +59,14 @@ describe('RequirementDrawer relations', () => {
       if (init?.method === 'POST') return { id: 's1', requirementId: 'r1', type: 'REFERENCE', status: 'CONFIRMED', targetRequirementId: null } as never;
       return undefined as never;
     });
-    vi.stubGlobal('confirm', vi.fn(() => true));
     await mount(true);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     const approve = Array.from(host.querySelectorAll('button')).find((button) => button.textContent?.includes('Aprovar'));
     expect(approve).toBeTruthy();
     await act(async () => { approve?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
+    const confirm = Array.from(host.querySelectorAll('button')).find((button) => button.textContent?.includes('Aplicar sugestão'));
+    expect(confirm).toBeTruthy();
+    await act(async () => { confirm?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(api).toHaveBeenCalledWith('/ai-suggestions/s1/approve', expect.objectContaining({ method: 'POST' }));
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['ai-suggestions', 'r1'] }));
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['references', 'r1'] }));

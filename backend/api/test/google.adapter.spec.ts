@@ -32,4 +32,14 @@ describe('GoogleAdapter', () => {
     const denied = new GoogleAdapter(jest.fn().mockResolvedValue(response({}, 403)));
     await expect(denied.listFiles('access')).rejects.toMatchObject({ code: 'PERMISSION_REVOKED', status: 403 });
   });
+  it('requests ownership metadata when listing folders', async () => {
+    const request = jest.fn().mockResolvedValue(response({ files: [] }));
+    const adapter = new GoogleAdapter(request);
+    await adapter.listFolders('access');
+    const url = new URL(request.mock.calls[0][0]);
+    expect(url.searchParams.get('fields')).toContain('ownedByMe');
+    expect(url.searchParams.get('fields')).toContain('sharedWithMeTime');
+    expect(url.searchParams.get('includeItemsFromAllDrives')).toBe('true');
+    expect(url.searchParams.get('supportsAllDrives')).toBe('true');
+  });
 });

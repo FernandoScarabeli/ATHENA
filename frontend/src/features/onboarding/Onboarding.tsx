@@ -4,6 +4,7 @@ import { Brand } from '../../components/Brand';
 import { Icon } from '../../components/Icon';
 import { api } from '../../lib/api';
 import type { Project, User, Workspace, WorkspaceSummary } from '../../lib/types';
+import type { Theme } from '../../lib/theme';
 import { ProjectWorkspace } from '../project/ProjectWorkspace';
 
 const ACTIVE_CONTEXT_KEY = 'athena.active-context';
@@ -21,10 +22,10 @@ function readSavedContext(userId: string): SavedContext | null {
 }
 
 function readDirectProjectId() {
-  return window.location.pathname.match(/^\/projects\/([^/]+)\/requirements\/[^/]+\/edit\/?$/)?.[1] ?? null;
+  return window.location.pathname.match(/^\/projects\/([^/]+)(?:\/requirements\/[^/]+\/edit|\/(?:overview|map|requirements|cancelled|imports))?\/?$/)?.[1] ?? null;
 }
 
-export function Onboarding({ user, onLogout }: { user: User; onLogout: () => void }) {
+export function Onboarding({ user, theme, onThemeChange, onLogout }: { user: User; theme: Theme; onThemeChange: (theme: Theme) => void; onLogout: () => void }) {
   const client = useQueryClient();
   const savedContext = useState(() => readSavedContext(user.id))[0];
   const directProjectId = useState(readDirectProjectId)[0];
@@ -102,10 +103,10 @@ export function Onboarding({ user, onLogout }: { user: User; onLogout: () => voi
     },
   });
 
-  if (workspaces.isLoading) return <StatePage loading title="Carregando seus workspaces"/>;
-  if (workspaces.isError) return <StatePage title="Não foi possível carregar seus workspaces" message={workspaces.error.message} onRetry={() => workspaces.refetch()} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
+  if (workspaces.isLoading) return <StatePage loading title="Carregando seus workspaces" theme={theme}/>;
+  if (workspaces.isError) return <StatePage title="Não foi possível carregar seus workspaces" message={workspaces.error.message} theme={theme} onRetry={() => workspaces.refetch()} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
-  if (workspace && project) return <ProjectWorkspace user={user} workspace={workspace} project={project} onChangeContext={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); }} onBrowseWorkspaces={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(false); setCreatingProject(false); }} onCreateWorkspace={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(true); }} onCreateProject={() => { setProjectId(null); setCreatingProject(true); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
+  if (workspace && project) return <ProjectWorkspace user={user} workspace={workspace} project={project} theme={theme} onThemeChange={onThemeChange} onChangeContext={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); }} onBrowseWorkspaces={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(false); setCreatingProject(false); }} onCreateWorkspace={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(true); }} onCreateProject={() => { setProjectId(null); setCreatingProject(true); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
   const workspaceList = workspaces.data ?? [];
   if (workspaceList.length > 0 && !workspace && !creatingWorkspace) {
@@ -202,7 +203,7 @@ function SelectionPage({ kicker, title, description, items, onSelect, onCreate, 
   </main>;
 }
 
-function StatePage({ loading = false, title, message, onRetry, onLogout, logoutPending = false }: { loading?: boolean; title: string; message?: string; onRetry?: () => void; onLogout?: () => void; logoutPending?: boolean }) {
+function StatePage({ loading = false, title, message, theme = 'light', onRetry, onLogout, logoutPending = false }: { loading?: boolean; title: string; message?: string; theme?: Theme; onRetry?: () => void; onLogout?: () => void; logoutPending?: boolean }) {
   return <main className="onboarding-page">
     {onLogout && <header className="auth-nav"><Brand/><button className="secondary-button" onClick={onLogout} disabled={logoutPending}><Icon name="logout" size={14}/> Sair</button></header>}
     <section className="state-page">

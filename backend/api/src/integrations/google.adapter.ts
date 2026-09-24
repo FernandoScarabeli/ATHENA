@@ -20,7 +20,7 @@ export const READABLE_GOOGLE_MIME_TYPES = new Set([
   'application/json',
 ]);
 
-export type GoogleFile = { id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string; parents?: string[] };
+export type GoogleFile = { id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string; parents?: string[]; ownedByMe?: boolean; sharedWithMeTime?: string };
 export type GoogleTokenSet = { access_token: string; refresh_token?: string; expires_in?: number; token_type?: string };
 type GoogleResponse = { ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
 type Mammoth = { extractRawText(input: { buffer: Buffer }): Promise<{ value: string }> };
@@ -86,13 +86,13 @@ export class GoogleAdapter {
     const escapedSearch = search?.trim().replace(/'/g, "\\'");
     const terms = ["mimeType = 'application/vnd.google-apps.folder'", 'trashed = false'];
     if (escapedSearch) terms.push(`name contains '${escapedSearch}'`);
-    const query = new URLSearchParams({ pageSize: '12', orderBy: 'modifiedTime desc', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,parents)', q: terms.join(' and ') });
+    const query = new URLSearchParams({ pageSize: '12', orderBy: 'modifiedTime desc', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,parents,ownedByMe,sharedWithMeTime)', q: terms.join(' and '), corpora: 'user', includeItemsFromAllDrives: 'true', supportsAllDrives: 'true' });
     if (pageToken) query.set('pageToken', pageToken);
     return this.get<{ files: GoogleFile[]; nextPageToken?: string }>(accessToken, `${this.driveUrl}/files?${query.toString()}`);
   }
 
   async listFolderFiles(accessToken: string, folderId: string, pageToken?: string) {
-    const query = new URLSearchParams({ pageSize: '100', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,parents)', q: `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false` });
+    const query = new URLSearchParams({ pageSize: '100', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,parents)', q: `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false`, includeItemsFromAllDrives: 'true', supportsAllDrives: 'true' });
     if (pageToken) query.set('pageToken', pageToken);
     return this.get<{ files: GoogleFile[]; nextPageToken?: string }>(accessToken, `${this.driveUrl}/files?${query.toString()}`);
   }
@@ -104,7 +104,7 @@ export class GoogleAdapter {
       return { title: file.name, content, mimeType: file.mimeType, document: decodeGoogleDocument(doc) };
     }
     if (!READABLE_GOOGLE_MIME_TYPES.has(file.mimeType)) throw new GoogleApiError('UNSUPPORTED_FILE', 415, `Arquivo Google não suportado: ${file.mimeType}`);
-    const response = await this.request(`${this.driveUrl}/files/${encodeURIComponent(file.id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const response = await this.request(`${this.driveUrl}/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (response.ok) {
       if (file.mimeType === WORD_DOCX_MIME) {
         // Mammoth reads the OOXML package locally. The document never leaves
