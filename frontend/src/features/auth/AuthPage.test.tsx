@@ -113,6 +113,29 @@ describe("AuthPage", () => {
     });
   });
 
+  it("creates a persistent session when the device is remembered", async () => {
+    vi.mocked(api).mockResolvedValueOnce({
+      id: "u1",
+      name: "Pessoa",
+      email: "pessoa@example.com",
+    } as never);
+    await mount();
+    await input("E-mail", "pessoa@example.com");
+    await input("Senha", "senha-segura-123");
+    await act(async () => {
+      (host.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
+      (host.querySelector(".auth-card") as HTMLFormElement).dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(
+      JSON.parse(
+        (vi.mocked(api).mock.calls[0][1] as { body: string }).body,
+      ).remember,
+    ).toBe(true);
+  });
+
   it("returns to login after verification without hiding the confirmation", async () => {
     window.history.replaceState(
       {},

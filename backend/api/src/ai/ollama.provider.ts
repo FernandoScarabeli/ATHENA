@@ -2,7 +2,22 @@ import { AiProvider, DependencyResponse, DependencyResponseSchema, DEPENDENCY_AN
 export class OllamaProvider implements AiProvider {
   constructor(private readonly base = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434', private readonly generationModel = process.env.OLLAMA_GENERATION_MODEL ?? process.env.OLLAMA_MODEL ?? 'llama3.2', private readonly embeddingModel = process.env.OLLAMA_EMBEDDING_MODEL ?? 'nomic-embed-text', private readonly timeoutMs = Number(process.env.AI_TIMEOUT_MS ?? 15000)) {}
   private async request(path: string, body: unknown) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs); try { return await fetch(`${this.base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal }); } catch (error) { if (error instanceof Error && error.name === 'AbortError') throw new Error(`Ollama excedeu o timeout de ${this.timeoutMs} ms`); throw new Error(`Ollama indisponível: ${error instanceof Error ? error.message : 'falha de rede'}`); } finally { clearTimeout(timer); } }
-  async embedMany(texts: string[]) { if (!texts.length) return []; const response = await this.request('/api/embed', { model: this.embeddingModel, input: texts }); if (!response.ok) throw new Error(`Ollama embedding indisponível (HTTP ${response.status})`); const body = await response.json() as { embeddings?: number[][] }; if (!Array.isArray(body.embeddings) || body.embeddings.length !== texts.length || body.embeddings.some(vector => !Array.isArray(vector))) throw new Error('Resposta de embedding do Ollama inválida'); return body.embeddings; }
+  async embedMany(texts: string[]) {
+    if (!texts.length) return [];
+    const response = await this.request('/api/embed', { model: this.embeddingModel, input: texts });
+    if (!response.ok) {
+      const responseText = (await response.text()).trim();
+      let detail = responseText;
+      try {
+        const body = JSON.parse(responseText) as { error?: unknown };
+        if (typeof body.error === 'string') detail = body.error;
+      } catch { /* Preserve a plain-text error response. */ }
+      throw new Error(`Ollama embedding indisponível (HTTP ${response.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`);
+    }
+    const body = await response.json() as { embeddings?: number[][] };
+    if (!Array.isArray(body.embeddings) || body.embeddings.length !== texts.length || body.embeddings.some(vector => !Array.isArray(vector))) throw new Error('Resposta de embedding do Ollama inválida');
+    return body.embeddings;
+  }
   async embed(text: string) { return (await this.embedMany([text]))[0]; }
   async analyseDependencies(input: unknown): Promise<DependencyResponse> { const prompt = `${DEPENDENCY_ANALYSIS_PROMPT}\nSe não houver evidência suficiente, retorne {"dependencies":[]}.\n\nCONTEXTO JSON:\n${JSON.stringify(input)}`; const response = await this.request('/api/generate', { model: this.generationModel, prompt, format: DEPENDENCY_RESPONSE_JSON_SCHEMA, options: { temperature: 0, num_predict: 128, num_ctx: 2048 }, stream: false }); if (!response.ok) throw new Error(`Ollama indisponível (HTTP ${response.status})`); const body = await response.json() as { response?: string }; if (!body.response) throw new Error('Resposta do Ollama sem conteúdo'); let parsed: unknown; try { parsed = JSON.parse(body.response); } catch { throw new Error('Ollama devolveu JSON inválido'); } try { return DependencyResponseSchema.parse(parsed); } catch { throw new Error('Ollama devolveu uma resposta de dependências inválida'); } }
 }

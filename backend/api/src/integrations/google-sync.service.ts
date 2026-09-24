@@ -1,10 +1,10 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
-import { GoogleDriveOutboxOperation, GoogleDriveOutboxStatus, GoogleSyncStatus, IntegrationCandidateChangeType, IntegrationCandidateStatus, IntegrationKind, IntegrationStatus, Prisma, RequirementStatus, RequirementType, WorkspaceRole } from '@prisma/client';
+import { GoogleDriveOutboxOperation, GoogleDriveOutboxStatus, GoogleSyncStatus, IntegrationCandidateChangeType, IntegrationCandidateStatus, IntegrationStatus, Prisma, RequirementStatus, RequirementType, WorkspaceRole } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../core/prisma.service';
 import { AiAnalysisJobService } from '../ai/ai-analysis-job.service';
 import { GoogleAdapter, GoogleApiError, GoogleFile, GOOGLE_DOC_MIME, READABLE_GOOGLE_MIME_TYPES } from './google.adapter';
-import { IntegrationsService } from './integrations.service';
+import { GoogleCredentialsService } from './google-credentials.service';
 
 const GOOGLE_DOC = GOOGLE_DOC_MIME;
 const POLL_MS = 10 * 60 * 1000;
@@ -25,9 +25,9 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly integrations: IntegrationsService,
     private readonly google: GoogleAdapter,
     private readonly aiJobs: AiAnalysisJobService,
+    private readonly googleCredentials: GoogleCredentialsService,
   ) {}
 
   onApplicationBootstrap() {
@@ -88,6 +88,36 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
     return folder.id;
   }
 
+  private async fallbackFolder(link: LinkedFolder) {
+    const current = await this.prisma.requirementFolder.findFirst({
+      where: { workspaceId: link.connection.workspaceId, name: 'Sem pasta', parentId: null },
+    });
+    return current ?? this.prisma.requirementFolder.create({
+      data: { workspaceId: link.connection.workspaceId, name: 'Sem pasta', description: 'Requisitos ainda não classificados' },
+    });
+  }
+
+  /**
+   * Before the root folder became a traversal boundary, it was mirrored as an
+   * empty ATHENA folder. Promote everything below that old wrapper so existing
+   * links gain the same root layout as new imports on their next sync.
+   */
+  private async flattenLegacyRoot(link: LinkedFolder) {
+    const root = await this.prisma.googleDriveFolderMapping.findUnique({
+      where: { googleDriveFolderLinkId_externalId: { googleDriveFolderLinkId: link.id, externalId: link.externalId } },
+      select: { id: true, folderId: true },
+    });
+    if (!root) return;
+    const fallback = await this.fallbackFolder(link);
+    await this.prisma.$transaction([
+      this.prisma.requirementFolder.updateMany({ where: { parentId: root.folderId }, data: { parentId: null } }),
+      this.prisma.googleDriveFolderMapping.updateMany({ where: { googleDriveFolderLinkId: link.id, parentExternalId: link.externalId }, data: { parentExternalId: null } }),
+      this.prisma.requirement.updateMany({ where: { folderId: root.folderId }, data: { folderId: fallback.id } }),
+      this.prisma.googleDriveFolderMapping.delete({ where: { id: root.id } }),
+      this.prisma.requirementFolder.delete({ where: { id: root.folderId } }),
+    ]);
+  }
+
   private async syncLink(id: string) {
     const claimed = await this.prisma.googleDriveFolderLink.updateMany({ where: { id, syncStatus: { not: GoogleSyncStatus.RUNNING } }, data: { syncStatus: GoogleSyncStatus.RUNNING, syncStartedAt: new Date(), syncError: null } });
     if (claimed.count !== 1) return { linkId: id, skipped: true };
@@ -97,28 +127,31 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
     let changed = 0;
     let scanned = 0;
     try {
-      const credentials = await this.integrations.activeCredentials(link.connection.workspaceId, IntegrationKind.GOOGLE);
-      const rootFolderId = await this.ensureFolder(link, link.externalId, link.name, null, null);
+      const credentials = await this.googleCredentials.valid(link.connection.workspaceId);
+      await this.flattenLegacyRoot(link);
+      const fallback = await this.fallbackFolder(link);
       const seen = new Set<string>();
-      const visit = async (driveFolderId: string, athenaFolderId: string) => {
+      const visit = async (driveFolderId: string, athenaParentId: string | null) => {
         let pageToken: string | undefined;
         do {
           const page = await this.google.listFolderFiles(credentials.accessToken, driveFolderId, pageToken);
           for (const file of page.files) {
             if (file.mimeType === 'application/vnd.google-apps.folder') {
-              const childFolderId = await this.ensureFolder(link, file.id, file.name, driveFolderId, athenaFolderId);
+              const childFolderId = await this.ensureFolder(link, file.id, file.name, driveFolderId, athenaParentId);
               await visit(file.id, childFolderId);
             } else if (READABLE_GOOGLE_MIME_TYPES.has(file.mimeType)) {
               scanned += 1;
               seen.add(`google:drive:${file.id}`);
               const read = await this.google.readFile(credentials.accessToken, file);
-              if (await this.applyRemote(link, run.id, file, read.content, read.document ?? this.document(read.content), athenaFolderId)) changed += 1;
+              if (await this.applyRemote(link, run.id, file, read.content, read.document ?? this.document(read.content), athenaParentId ?? fallback.id)) changed += 1;
             }
           }
           pageToken = page.nextPageToken;
         } while (pageToken);
       };
-      await visit(link.externalId, rootFolderId);
+      // The linked folder is a boundary, not an ATHENA folder. Its direct
+      // child folders become the top-level folders in the project overview.
+      await visit(link.externalId, null);
       changed += await this.archiveMissing(link, seen);
       const completedAt = new Date();
       await this.prisma.$transaction([
@@ -249,8 +282,13 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
 
   private async destinationId(linkId: string, folderId: string) {
     const mapping = await this.prisma.googleDriveFolderMapping.findUnique({ where: { folderId } });
-    if (!mapping || mapping.googleDriveFolderLinkId !== linkId) throw new NotFoundException('A pasta ATHENA não pertence a este vínculo do Drive');
-    return mapping.externalId;
+    if (mapping?.googleDriveFolderLinkId === linkId) return mapping.externalId;
+    const folder = await this.prisma.requirementFolder.findUnique({ where: { id: folderId }, select: { name: true, parentId: true } });
+    if (folder?.name === 'Sem pasta' && !folder.parentId) {
+      const link = await this.prisma.googleDriveFolderLink.findUnique({ where: { id: linkId }, select: { externalId: true } });
+      if (link) return link.externalId;
+    }
+    throw new NotFoundException('A pasta ATHENA não pertence a este vínculo do Drive');
   }
 
   private async archiveFolder(accessToken: string, link: { externalId: string }, credentials: string) {
@@ -262,7 +300,7 @@ export class GoogleSyncService implements OnApplicationBootstrap, OnApplicationS
   private async writeOutbox(row: any) {
     const { requirement, googleDriveFolderLink: link } = row;
     if (link.connection.status !== IntegrationStatus.CONNECTED) throw new NotFoundException('Conexão Google não está ativa');
-    const credentials = await this.integrations.activeCredentials(link.connection.workspaceId, IntegrationKind.GOOGLE);
+    const credentials = await this.googleCredentials.valid(link.connection.workspaceId);
     const text = this.plain(requirement.content);
     const fingerprint = this.requirementFingerprint(requirement);
     let source = row.integrationSource;

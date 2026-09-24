@@ -4,10 +4,11 @@ import { GoogleService } from '../src/integrations/google.service';
 describe('GoogleService', () => {
   const crypto: any = { encrypt: jest.fn(() => 'cipher'), decrypt: jest.fn() };
   const integrations: any = { connect: jest.fn().mockResolvedValue({ id: 'connection', kind: 'GOOGLE' }), activeCredentials: jest.fn().mockResolvedValue({ accessToken: 'access', refreshToken: 'refresh', expiresAt: String(Date.now() + 3600000) }), replaceCredentials: jest.fn() };
+  const googleCredentials: any = { valid: jest.fn().mockResolvedValue({ accessToken: 'access', refreshToken: 'refresh' }) };
   const google: any = { authorizationUrl: jest.fn(() => 'https://accounts.google.test/auth?state=opaque'), exchangeCode: jest.fn().mockResolvedValue({ access_token: 'access', refresh_token: 'refresh', expires_in: 3600 }), listFiles: jest.fn().mockResolvedValue({ files: [{ id: 'doc-1', name: 'Doc', mimeType: 'application/vnd.google-apps.document' }] }), readFile: jest.fn().mockResolvedValue({ title: 'Doc', content: 'content', mimeType: 'application/vnd.google-apps.document' }) };
   function setup(member: any = { role: 'OWNER' }) {
-    const prisma: any = { workspaceMember: { findUnique: jest.fn().mockResolvedValue(member) }, googleOAuthState: { create: jest.fn().mockResolvedValue({}), findFirst: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, integrationConnection: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'connection' }) }, integrationSource: { upsert: jest.fn().mockResolvedValue({ id: 'source' }) }, integrationCandidate: { upsert: jest.fn().mockResolvedValue({ id: 'candidate', title: 'Doc', status: 'PENDING' }) } };
-    return { service: new GoogleService(prisma, integrations, crypto, google), prisma };
+    const prisma: any = { workspaceMember: { findUnique: jest.fn().mockResolvedValue(member) }, googleOAuthState: { create: jest.fn().mockResolvedValue({}), findFirst: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, integrationConnection: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'connection' }) }, integrationSource: { upsert: jest.fn().mockResolvedValue({ id: 'source' }) }, integrationCandidate: { upsert: jest.fn().mockResolvedValue({ id: 'candidate', title: 'Doc', status: 'PENDING' }) }, googleDriveSyncRun: { findMany: jest.fn().mockResolvedValue([]) } };
+    return { service: new GoogleService(prisma, integrations, crypto, google, googleCredentials), prisma };
   }
   beforeEach(() => { process.env.GOOGLE_CLIENT_ID = 'client'; process.env.GOOGLE_CLIENT_SECRET = 'secret'; process.env.GOOGLE_OAUTH_REDIRECT_URI = 'http://localhost/callback'; jest.clearAllMocks(); });
   it('requires OWNER and stores a one-use state hash with TTL', async () => {
@@ -34,12 +35,14 @@ describe('GoogleService', () => {
     ] });
     expect(google.listFolders).toHaveBeenCalledWith('access', undefined, undefined);
   });
-  it('does not import with a missing refreshable secret and keeps provider errors classified', async () => {
-    const { service } = setup();
-    integrations.activeCredentials.mockResolvedValueOnce({ accessToken: 'access', expiresAt: String(Date.now() - 1) });
-    await expect(service.files('u', 'w')).rejects.toMatchObject({ status: 409 });
-    google.listFiles.mockRejectedValueOnce({ code: 'RATE_LIMIT' });
-    integrations.activeCredentials.mockResolvedValueOnce({ accessToken: 'access', refreshToken: 'refresh', expiresAt: String(Date.now() + 3600000) });
-    await expect(service.files('u', 'w')).rejects.toBeDefined();
+  it('filters sync history to failures and completed runs with changes before pagination', async () => {
+    const { service, prisma } = setup();
+    await service.syncRuns('u', 'w', 'cursor-1', 2);
+    expect(prisma.googleDriveSyncRun.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { googleDriveFolderLink: { connection: { workspaceId: 'w' } }, OR: [{ status: 'FAILED' }, { status: 'COMPLETED', changedCount: { gt: 0 } }] },
+      take: 3,
+      cursor: { id: 'cursor-1' },
+      skip: 1,
+    }));
   });
 });

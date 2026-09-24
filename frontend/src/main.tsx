@@ -8,7 +8,9 @@ import './styles.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 15_000, refetchOnWindowFocus: false },
+    // Revalidate stale data when the user returns to the tab or reconnects.
+    // The workspace also polls its live overview queries while it is open.
+    queries: { staleTime: 0, refetchOnWindowFocus: true, refetchOnReconnect: true },
     mutations: { retry: false },
   },
 });

@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ArrowRight,
+  Check,
   Eye,
   EyeOff,
+  FileText,
+  GitBranch,
+  ListChecks,
   LockKeyhole,
   Mail,
+  Waypoints,
   UserRound,
 } from "lucide-react";
 import { Brand } from "../../components/Brand";
@@ -267,6 +272,10 @@ export function AuthPage({
         >
           <Brand />
         </button>
+        <button className="auth-profile-button" type="button">
+          <UserRound size={16} aria-hidden="true" />
+          Meu perfil
+        </button>
       </header>
       <div className="auth-layout">
         <section className="auth-intro">
@@ -276,14 +285,50 @@ export function AuthPage({
             Encontre o contexto que precisa de revisão antes que a decisão se
             propague.
           </p>
-          <div className="auth-trace" aria-hidden="true">
-            <span className="auth-trace-origin">REQ-142</span>
-            <span className="auth-trace-line trace-one" />
-            <span className="auth-trace-line trace-two" />
-            <span className="auth-trace-node node-one">Critério</span>
-            <span className="auth-trace-node node-two">Documento</span>
-            <small>3 relações para revisar</small>
-          </div>
+          <figure
+            className="auth-impact-map"
+            role="img"
+            aria-label="Exemplo ilustrativo: o requisito REQ-142 está ligado a um critério de aceite, um documento e uma regra de negócio."
+          >
+            <div className="auth-impact-map-header" aria-hidden="true">
+              <span><GitBranch size={15} /> Mapa de relações</span>
+              <small>Exemplo ilustrativo</small>
+            </div>
+            <div className="auth-impact-map-canvas" aria-hidden="true">
+              <svg className="auth-impact-map-lines" viewBox="0 0 500 190" preserveAspectRatio="none">
+                <path d="M190 95 C244 95 250 42 306 42" />
+                <path d="M190 95 H306" />
+                <path d="M190 95 C244 95 250 148 306 148" />
+                <circle cx="190" cy="95" r="4" />
+                <circle cx="306" cy="42" r="3" />
+                <circle cx="306" cy="95" r="3" />
+                <circle cx="306" cy="148" r="3" />
+                <circle className="auth-impact-pulse" r="4">
+                  <animateMotion dur="4.8s" repeatCount="indefinite" path="M190 95 C244 95 250 42 306 42" />
+                </circle>
+                <circle className="auth-impact-pulse" r="4">
+                  <animateMotion begin="1.6s" dur="4.8s" repeatCount="indefinite" path="M190 95 H306" />
+                </circle>
+                <circle className="auth-impact-pulse" r="4">
+                  <animateMotion begin="3.2s" dur="4.8s" repeatCount="indefinite" path="M190 95 C244 95 250 148 306 148" />
+                </circle>
+              </svg>
+              <div className="auth-impact-source">
+                <span>Requisito alterado</span>
+                <strong>REQ-142</strong>
+                <small>Origem da mudança</small>
+              </div>
+              <div className="auth-impact-targets">
+                <div><ListChecks size={16} /><span>Critério de aceite</span></div>
+                <div><FileText size={16} /><span>Documento</span></div>
+                <div><Waypoints size={16} /><span>Regra de negócio</span></div>
+              </div>
+            </div>
+            <figcaption className="auth-impact-map-footer">
+              <span><i /> Uma mudança</span>
+              <span>3 relações no contexto</span>
+            </figcaption>
+          </figure>
         </section>
         <form className="auth-card" onSubmit={submit}>
           <div className="sign-in-heading">
@@ -375,7 +420,10 @@ export function AuthPage({
                   checked={remember}
                   onChange={(event) => setRemember(event.target.checked)}
                 />
-                <span>Lembrar este dispositivo</span>
+                <span className="custom-checkbox" aria-hidden="true">
+                  {remember && <Check size={12} strokeWidth={2.5} />}
+                </span>
+                <span>Lembrar este dispositivo por 30 dias</span>
               </label>
               <button
                 type="button"

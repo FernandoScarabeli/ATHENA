@@ -27,13 +27,13 @@ export function GoogleDrivePanel({ workspaceId, projectId: currentProjectId, rol
   const [folderQuery, setFolderQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(() => {
     const query = new URLSearchParams(window.location.search);
-    return query.get('integration') === 'google' && query.get('status') === 'connected' ? 'Google Drive conectado. Agora escolha uma pasta para iniciar a sincronização.' : null;
+    return query.get('integration') === 'google' && query.get('status') === 'connected' && (!query.get('workspaceId') || query.get('workspaceId') === workspaceId) ? 'Google Drive conectado. Agora escolha uma pasta para iniciar a sincronização.' : null;
   });
   const integrations = useQuery<Connection[]>({ queryKey: ['integrations', workspaceId], queryFn: () => api(`/workspaces/${workspaceId}/integrations`) });
   const workspaces = useQuery<WorkspaceProjects[]>({ queryKey: ['workspaces'], queryFn: () => api('/workspaces'), enabled: owner });
   const projects = workspaces.data?.find(item => item.id === workspaceId)?.projects ?? [];
   const connected = Boolean(integrations.data?.find(item => item.kind === 'GOOGLE' && item.status === 'CONNECTED'));
-  const links = useQuery<FolderLink[]>({ queryKey: ['google-folder-links', workspaceId], queryFn: () => api(`/workspaces/${workspaceId}/integrations/google/folder-links`), enabled: connected && owner });
+  const links = useQuery<FolderLink[]>({ queryKey: ['google-folder-links', workspaceId], queryFn: () => api(`/workspaces/${workspaceId}/integrations/google/folder-links`), enabled: connected && owner, refetchInterval: (query) => query.state.data?.some(item => item.syncStatus === 'RUNNING') ? 2_000 : 10_000, refetchIntervalInBackground: false });
   const normalizedQuery = folderQuery.trim();
   const folders = useQuery<FolderSearchResponse>({ queryKey: ['google-folders', workspaceId, normalizedQuery], queryFn: () => api(`/workspaces/${workspaceId}/integrations/google/folders${normalizedQuery ? `?query=${encodeURIComponent(normalizedQuery)}` : ''}`), enabled: connected && owner && pickerOpen });
   const availableFolders = useMemo(() => (folders.data?.files ?? []).filter(folder => !links.data?.some(link => link.externalId === folder.id)), [folders.data?.files, links.data]);
@@ -48,10 +48,10 @@ export function GoogleDrivePanel({ workspaceId, projectId: currentProjectId, rol
     onSuccess: async (_, folder) => {
       setPickerOpen(false); setFolderQuery('');
       setFeedback(`“${folder.name}” foi vinculada e a primeira sincronização foi iniciada.`);
-      await Promise.all([client.invalidateQueries({ queryKey: ['google-folder-links', workspaceId] }), client.invalidateQueries({ queryKey: ['integration-candidates', workspaceId] }), client.invalidateQueries({ queryKey: ['requirements'] }), client.invalidateQueries({ queryKey: ['folders', workspaceId] })]);
+      await Promise.all([client.invalidateQueries({ queryKey: ['google-folder-links', workspaceId] }), client.invalidateQueries({ queryKey: ['integration-candidates', workspaceId] }), client.invalidateQueries({ queryKey: ['google-sync-runs', workspaceId] }), client.invalidateQueries({ queryKey: ['requirements'] }), client.invalidateQueries({ queryKey: ['folders', workspaceId] })]);
     },
   });
-  const sync = useMutation({ mutationFn: (id: string) => api(`/workspaces/${workspaceId}/integrations/google/folder-links/${id}/sync`, { method: 'POST' }), onSuccess: async () => { setFeedback('Sincronização concluída. A atividade foi atualizada.'); await Promise.all([client.invalidateQueries({ queryKey: ['google-folder-links', workspaceId] }), client.invalidateQueries({ queryKey: ['integration-candidates', workspaceId] }), client.invalidateQueries({ queryKey: ['requirements'] })]); } });
+  const sync = useMutation({ mutationFn: (id: string) => api(`/workspaces/${workspaceId}/integrations/google/folder-links/${id}/sync`, { method: 'POST' }), onSuccess: async () => { setFeedback('Sincronização concluída. A atividade foi atualizada.'); await Promise.all([client.invalidateQueries({ queryKey: ['google-folder-links', workspaceId] }), client.invalidateQueries({ queryKey: ['integration-candidates', workspaceId] }), client.invalidateQueries({ queryKey: ['google-sync-runs', workspaceId] }), client.invalidateQueries({ queryKey: ['requirements'] }), client.invalidateQueries({ queryKey: ['folders', workspaceId] })]); } });
 
   if (role === 'VIEWER') return null;
 
