@@ -20,10 +20,11 @@ export const READABLE_GOOGLE_MIME_TYPES = new Set([
   'application/json',
 ]);
 
-export type GoogleFile = { id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string; parents?: string[]; ownedByMe?: boolean; sharedWithMeTime?: string };
+export type GoogleFile = { id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string; parents?: string[]; appProperties?: Record<string, string>; ownedByMe?: boolean; sharedWithMeTime?: string };
 export type GoogleTokenSet = { access_token: string; refresh_token?: string; expires_in?: number; token_type?: string };
 type GoogleResponse = { ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
 type Mammoth = { extractRawText(input: { buffer: Buffer }): Promise<{ value: string }> };
+const GOOGLE_REQUEST_TIMEOUT_MS = 60_000;
 
 export class GoogleApiError extends Error {
   constructor(readonly code: 'AUTHENTICATION' | 'PERMISSION_REVOKED' | 'RATE_LIMIT' | 'UNSUPPORTED_FILE' | 'UPSTREAM', readonly status: number, message: string) { super(message); }
@@ -35,10 +36,22 @@ export class GoogleAdapter {
   private readonly tokenUrl = process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
   private readonly driveUrl = (process.env.GOOGLE_DRIVE_API_URL ?? 'https://www.googleapis.com/drive/v3').replace(/\/$/, '');
   private readonly docsUrl = (process.env.GOOGLE_DOCS_API_URL ?? 'https://docs.googleapis.com/v1').replace(/\/$/, '');
-  constructor(private readonly request: (input: string, init?: RequestInit) => Promise<GoogleResponse> = (input, init) => fetch(input, init) as unknown as Promise<GoogleResponse>) {}
+  constructor(private readonly request: (input: string, init?: RequestInit) => Promise<GoogleResponse> = async (input, init) => {
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: init?.signal ?? AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS),
+      }) as unknown as GoogleResponse;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new Error('O Google não respondeu em até 60 segundos. Tente sincronizar novamente.');
+      }
+      throw error;
+    }
+  }) {}
 
   authorizationUrl(state: string, redirectUri: string, clientId: string): string {
-    const query = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', scope: GOOGLE_SCOPES.join(' '), state });
+    const query = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', access_type: 'offline', prompt: 'select_account consent', include_granted_scopes: 'true', scope: GOOGLE_SCOPES.join(' '), state });
     return `${this.authUrl}?${query.toString()}`;
   }
 
@@ -77,7 +90,7 @@ export class GoogleAdapter {
   }
 
   async listFiles(accessToken: string, pageToken?: string): Promise<{ files: GoogleFile[]; nextPageToken?: string }> {
-    const query = new URLSearchParams({ pageSize: '100', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,parents)', q: 'trashed = false' });
+    const query = new URLSearchParams({ pageSize: '100', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,parents,appProperties)', q: 'trashed = false' });
     if (pageToken) query.set('pageToken', pageToken);
     return this.get(accessToken, `${this.driveUrl}/files?${query.toString()}`);
   }
@@ -121,7 +134,25 @@ export class GoogleAdapter {
     throw new GoogleApiError('UPSTREAM', response.status, 'Não foi possível ler o arquivo no Google Drive');
   }
 
-  async createDocument(accessToken: string, title: string) {
+  async findByAppProperty(accessToken: string, key: string, value: string): Promise<GoogleFile | null> {
+    const escape = (input: string) => input.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const q = `trashed = false and appProperties has { key='${escape(key)}' and value='${escape(value)}' }`;
+    const query = new URLSearchParams({ pageSize: '2', fields: 'files(id,name,mimeType,modifiedTime,webViewLink,parents,appProperties)', q, includeItemsFromAllDrives: 'true', supportsAllDrives: 'true' });
+    const result = await this.get<{ files?: GoogleFile[] }>(accessToken, `${this.driveUrl}/files?${query.toString()}`);
+    return result.files?.[0] ?? null;
+  }
+
+  async createDocument(accessToken: string, title: string, parentId?: string, appProperties?: Record<string, string>) {
+    // Create the Google Doc through Drive so parent and idempotency metadata
+    // are committed in the same request. A retry can find this file even if
+    // the API process stopped before recording the IntegrationSource.
+    if (parentId) {
+      const file = await this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files?supportsAllDrives=true&fields=id,name,mimeType,parents,appProperties`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: title, mimeType: GOOGLE_DOC_MIME, parents: [parentId], ...(appProperties ? { appProperties } : {}) }),
+      });
+      return { documentId: file.id, title: file.name };
+    }
     return this.mutate<{ documentId: string; title: string }>(accessToken, `${this.docsUrl}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) });
   }
 
@@ -146,7 +177,7 @@ export class GoogleAdapter {
   }
 
   async updateFileName(accessToken: string, fileId: string, name: string) {
-    return this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files/${encodeURIComponent(fileId)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+    return this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=id,name,mimeType,parents,appProperties`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
   }
 
   async updateTextFile(accessToken: string, fileId: string, text: string) {
@@ -158,15 +189,20 @@ export class GoogleAdapter {
     throw new GoogleApiError('UPSTREAM', response.status, 'Não foi possível atualizar o arquivo no Google Drive');
   }
 
-  async moveFile(accessToken: string, fileId: string, destinationId: string, currentParents: string[] = []) {
-    const query = new URLSearchParams({ addParents: destinationId, fields: 'id,name,mimeType,modifiedTime,parents' });
-    const removable = currentParents.filter(parent => parent !== destinationId);
+  async moveFile(accessToken: string, fileId: string, destinationId: string, currentParents?: string[]) {
+    const parents = currentParents ?? (await this.get<GoogleFile>(accessToken, `${this.driveUrl}/files/${encodeURIComponent(fileId)}?fields=id,parents&supportsAllDrives=true`)).parents ?? [];
+    const query = new URLSearchParams({ addParents: destinationId, fields: 'id,name,mimeType,modifiedTime,parents', supportsAllDrives: 'true' });
+    const removable = parents.filter(parent => parent !== destinationId);
     if (removable.length) query.set('removeParents', removable.join(','));
     return this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files/${encodeURIComponent(fileId)}?${query.toString()}`, { method: 'PATCH' });
   }
 
-  async createFolder(accessToken: string, name: string, parentId: string) {
-    return this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }) });
+  async createFolder(accessToken: string, name: string, parentId: string, appProperties?: Record<string, string>) {
+    return this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files?supportsAllDrives=true&fields=id,name,mimeType,parents,appProperties`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId], ...(appProperties ? { appProperties } : {}) }) });
+  }
+
+  async trashFile(accessToken: string, fileId: string) {
+    return this.mutate<GoogleFile>(accessToken, `${this.driveUrl}/files/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=id,name,trashed`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
   }
 }
 

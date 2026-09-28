@@ -26,8 +26,8 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals(); });
 
-const mount = async () => {
-  await act(async () => root.render(<QueryClientProvider client={client}><TemplateEditor workspace={{ id: 'workspace-1', name: 'Produto', role: 'EDITOR' }} templateId={initial.id} onClose={vi.fn()}/></QueryClientProvider>));
+const mount = async (role: 'OWNER' | 'MANAGER' | 'EDITOR' | 'VIEWER' = 'OWNER') => {
+  await act(async () => root.render(<QueryClientProvider client={client}><TemplateEditor workspace={{ id: 'workspace-1', name: 'Produto', role }} templateId={initial.id} onClose={vi.fn()}/></QueryClientProvider>));
 };
 const description = () => host.querySelector<HTMLInputElement>('.template-description input')!;
 const saveButton = () => Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(node => node.textContent === 'Salvar')!;
@@ -84,5 +84,12 @@ describe('template editor saving', () => {
     const body = JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string);
     expect(body.acceptanceCriteria).toEqual([expect.objectContaining({ title: 'Usuário autenticado', given: 'que possui uma conta válida', when: 'envia o formulário', then: 'o acesso é concedido', position: 0 })]);
     expect(saveButton().disabled).toBe(true);
+  });
+
+  it('keeps workspace templates read-only for Managers and Editors', async () => {
+    await mount('MANAGER');
+    expect(host.textContent).toContain('Somente Owner pode editar templates do workspace.');
+    expect(host.querySelector('button')?.textContent).not.toContain('Salvar');
+    expect(host.querySelector<HTMLInputElement>('.template-description input')?.disabled).toBe(true);
   });
 });

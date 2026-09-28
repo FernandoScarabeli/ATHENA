@@ -5,11 +5,17 @@ import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpErrorFilter } from './common/http-error.filter';
+import { resolveAppOrigin } from './common/public-origin';
 
 async function bootstrap() {
   if (process.env.NODE_ENV === 'production') {
     for (const key of ['APP_ORIGIN', 'RESEND_API_KEY', 'RESEND_FROM', 'TERMS_URL', 'PRIVACY_URL', 'TERMS_VERSION', 'PRIVACY_VERSION']) {
       if (!process.env[key]) throw new Error(`${key} é obrigatório em produção.`);
+    }
+    try {
+      resolveAppOrigin(process.env.APP_ORIGIN, true);
+    } catch {
+      throw new Error('APP_ORIGIN deve ser uma origem pública válida em produção.');
     }
   }
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });

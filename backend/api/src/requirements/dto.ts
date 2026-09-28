@@ -2,8 +2,9 @@ import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsEmail, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, Validate, ValidateNested, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
 
 export enum StatusDto { DRAFT='DRAFT', ACTIVE='ACTIVE', ARCHIVED='ARCHIVED' }
-export enum RelationDto { RELATED_TO='RELATED_TO', DEPENDS_ON='DEPENDS_ON', BLOCKS='BLOCKS', CONFLICTS_WITH='CONFLICTS_WITH' }
-export enum WorkspaceRoleDto { OWNER='OWNER', EDITOR='EDITOR', VIEWER='VIEWER' }
+export enum RelationDto { RELATED_TO='RELATED_TO', DEPENDS_ON='DEPENDS_ON', BLOCKS='BLOCKS' }
+export enum RelationDirectionDto { CURRENT_TO_OTHER='CURRENT_TO_OTHER', OTHER_TO_CURRENT='OTHER_TO_CURRENT' }
+export enum WorkspaceRoleDto { OWNER='OWNER', MANAGER='MANAGER', EDITOR='EDITOR', VIEWER='VIEWER' }
 export enum ReferenceTypeDto { PROTOTYPE='PROTOTYPE', ATTACHMENT='ATTACHMENT' }
 
 const nodeAttrs: Record<string, string[]> = {
@@ -101,8 +102,22 @@ export class UpdateRequirementDto {
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(() => CriterionDto) acceptanceCriteria?: CriterionDto[];
 }
 export class CreateRelationDto { @IsUUID() targetId!:string; @IsEnum(RelationDto) type!:RelationDto; }
-export class CreateWorkspaceDto { @IsString() @MaxLength(120) name!:string; }
-export class CreateProjectDto { @IsString() @MaxLength(120) name!:string; @IsString() @MaxLength(16) key!:string; }
+export class UpdateRelationDto { @IsEnum(RelationDto) type!:RelationDto; @IsOptional() @IsEnum(RelationDirectionDto) direction?:RelationDirectionDto; }
+export class CreateWorkspaceDto { @IsString() @Matches(/\S/) @MaxLength(120) name!:string; }
+export class UpdateWorkspaceDto { @IsString() @Matches(/\S/, { message: 'O nome do workspace não pode ficar vazio' }) @MaxLength(120) name!:string; }
+export class UpdateReviewChecklistDto {
+  @IsArray() @ArrayMaxSize(100) @IsString({ each: true }) @MaxLength(1000, { each: true }) @Matches(/\S/, { each: true }) items!: string[];
+}
+export class CreateProjectDto { @IsString() @Matches(/\S/) @MaxLength(120) name!:string; @IsString() @Matches(/^[A-Za-z0-9_-]+$/) @MaxLength(16) key!:string; }
+export class UpdateProjectDto {
+  @IsOptional() @IsString() @Matches(/\S/, { message: 'O nome do projeto não pode ficar vazio' }) @MaxLength(120) name?:string;
+  @IsOptional() @IsString() @Matches(/^[A-Za-z0-9_-]+$/, { message: 'A chave aceita letras, números, hífen e sublinhado' }) @MaxLength(16) key?:string;
+}
+export class MoveProjectDto {
+  @IsUUID() targetWorkspaceId!:string;
+  @IsOptional() @IsString() @Matches(/^[A-Za-z0-9_-]+$/, { message: 'A chave aceita letras, números, hífen e sublinhado' }) @MaxLength(16) key?:string;
+}
+export class ConfirmDeleteDto { @IsString() @Matches(/\S/) @MaxLength(120) confirmationName!:string; }
 
 export class AddWorkspaceMemberDto { @IsEmail() email!:string; @IsEnum(WorkspaceRoleDto) role!:WorkspaceRoleDto; }
 export class UpdateWorkspaceMemberDto { @IsEnum(WorkspaceRoleDto) role!:WorkspaceRoleDto; }

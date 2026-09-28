@@ -41,16 +41,28 @@ Para o procedimento completo de configuração, quality gates e validação real
 
 ## Espelhamento bidirecional de pasta Google Drive
 
-Um vínculo de pasta agora escolhe também o projeto ATHENA de destino. A raiz e
-suas subpastas são representadas como uma árvore de pastas no workspace; Docs,
-TXT, Markdown, CSV e JSON suportados viram US automaticamente. A API percorre a
-raiz a cada 10 minutos e o OWNER também pode usar **Sincronizar agora**.
+Cada projeto tem sua própria árvore de pastas e uma raiz padrão do Drive para
+exportação. O primeiro vínculo vira essa raiz; OWNER pode escolher outra, e os
+demais vínculos continuam disponíveis para importação. A raiz e suas subpastas
+são representadas na árvore do projeto; Docs, TXT, Markdown, CSV e JSON
+suportados viram US automaticamente. A API percorre os vínculos a cada 10
+minutos e o OWNER também pode usar **Sincronizar agora**.
 
 Não existe fila de aprovação por arquivo: criação, edição, movimentação e
 remoção do Drive são aplicadas à US vinculada com histórico de revisões. Uma US
 criada, salva, movida ou arquivada dentro de uma pasta vinculada gera uma operação
-durável de volta ao Drive; US arquivadas são movidas para `Arquivados`. Quando os
+durável de volta ao Drive; novas pastas e US sem vínculo remoto são criadas sob
+a raiz padrão do projeto, e US arquivadas são movidas para `Arquivados`. Uma US
+importada mantém sua fonte e pasta remota de origem. Criar a raiz não exporta
+US antigas automaticamente: OWNER confere a prévia e inicia a exportação em
+lote quando decidir. A outbox mostra estado, tentativas e erros; marcadores do
+Drive permitem retomar escritas sem criar pastas ou Docs duplicados. Quando os
 dois lados mudam antes da próxima leitura, a alteração mais recente prevalece.
+
+Pastas do ATHENA sincronizam criação, renomeação e movimentação. Ao excluir uma
+pasta mapeada, as US vão para `Sem pasta`, os Docs são movidos para a raiz do
+projeto e a pasta remota vai para a Lixeira. Pastas com subpastas continuam
+protegidas contra exclusão.
 
 O OAuth pede `drive` e `documents` para poder escrever. Conexões criadas com os
 escopos antigos de somente leitura devem ser reconectadas pelo OWNER. A outbox e

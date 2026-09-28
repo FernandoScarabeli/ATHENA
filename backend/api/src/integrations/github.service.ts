@@ -3,6 +3,7 @@ import { IntegrationKind, WorkspaceRole } from '@prisma/client';
 import { PrismaService } from '../core/prisma.service';
 import { IntegrationsService } from './integrations.service';
 import { GithubAdapter, GithubSelection, mapGithubError } from './github.adapter';
+import { requireWorkspaceManagerOrOwner, requireWorkspaceOwner } from '../common/project-access';
 
 @Injectable()
 export class GithubService {
@@ -10,16 +11,26 @@ export class GithubService {
   constructor(private readonly prisma: PrismaService, private readonly integrations: IntegrationsService, private readonly github: GithubAdapter) {}
 
   private async owner(userId: string, workspaceId: string) {
-    const member = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
-    if (!member || member.role !== WorkspaceRole.OWNER) throw new ForbiddenException('Somente OWNER pode operar a integração GitHub');
+    try { await requireWorkspaceOwner(this.prisma, userId, workspaceId); }
+    catch (error) { if (error instanceof ForbiddenException) throw new ForbiddenException('Somente OWNER pode operar a integração GitHub'); throw error; }
   }
   private async token(workspaceId: string) { return this.integrations.activeCredentials(workspaceId, IntegrationKind.GITHUB); }
 
   async account(userId: string, workspaceId: string) {
     await this.owner(userId, workspaceId); try { return await this.github.validateAccount((await this.token(workspaceId)).token); } catch (e) { return mapGithubError(e); }
   }
+  async connect(userId: string, workspaceId: string, token: string) {
+    await this.owner(userId, workspaceId);
+    let account: { login: string; id: number };
+    try { account = await this.github.validateAccount(token); }
+    catch (error) { return mapGithubError(error); }
+    return this.integrations.connect(userId, workspaceId, IntegrationKind.GITHUB, { token }, account.login);
+  }
   async repositories(userId: string, workspaceId: string, page = 1) {
-    await this.owner(userId, workspaceId); try { return await this.github.listRepositories((await this.token(workspaceId)).token, page); } catch (e) { return mapGithubError(e); }
+    await requireWorkspaceManagerOrOwner(this.prisma, userId, workspaceId); try { return await this.github.listRepositories((await this.token(workspaceId)).token, page); } catch (e) { return mapGithubError(e); }
+  }
+  async projects(userId: string, workspaceId: string, owner: string) {
+    await requireWorkspaceManagerOrOwner(this.prisma, userId, workspaceId); try { return await this.github.projects((await this.token(workspaceId)).token, owner); } catch (e) { return mapGithubError(e); }
   }
   async importSources(userId: string, workspaceId: string, selections: GithubSelection[]) {
     await this.owner(userId, workspaceId);

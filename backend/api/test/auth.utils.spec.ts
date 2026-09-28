@@ -17,21 +17,14 @@ describe("identity helpers", () => {
   ])("rejects unsafe return destination %s", (value) =>
     expect(safeReturnTo(value)).toBeUndefined(),
   );
-  it("blocks a password reported by the k-anonymous range response", async () => {
-    const policy = new PasswordPolicyService() as any;
-    policy.rangeFetcher = jest
-      .fn()
-      .mockResolvedValue("51CC54B60534F68D0F614FCC67950151353:1");
-    await expect(policy.validate("password")).rejects.toThrow("pelo menos 12");
-    await expect(policy.validate("passwordpassword")).rejects.toThrow(
-      "vazamentos",
+  it("requires eight characters, a letter, a number, and a special character", async () => {
+    const policy = new PasswordPolicyService();
+    await expect(policy.validate("Ab1!xyz")).rejects.toThrow("8 caracteres");
+    await expect(policy.validate("password!long")).rejects.toThrow("número");
+    await expect(policy.validate("12345678!")).rejects.toThrow("letra");
+    await expect(policy.validate("Password123")).rejects.toThrow(
+      "caractere especial",
     );
-  });
-  it("fails closed when the compromised-password service is unavailable", async () => {
-    const policy = new PasswordPolicyService() as any;
-    policy.rangeFetcher = jest.fn().mockRejectedValue(new Error("offline"));
-    await expect(policy.validate("long-enough-secret")).rejects.toThrow(
-      "Não foi possível validar",
-    );
+    await expect(policy.validate("Senha@123")).resolves.toBeUndefined();
   });
 });

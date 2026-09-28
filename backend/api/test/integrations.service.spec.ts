@@ -14,6 +14,7 @@ describe('IntegrationsService', () => {
         update: jest.fn().mockResolvedValue({ id: 'c', workspaceId: 'w', kind: IntegrationKind.GITHUB, status: IntegrationStatus.DISCONNECTED, accountLabel: 'acme', encryptedCredentials: null, connectedAt: null, disconnectedAt: new Date(), createdAt: null, updatedAt: null }),
       },
       integrationCandidate: { findMany: jest.fn().mockResolvedValue([]) },
+      integrationProjectMapping: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     return { service: new IntegrationsService(prisma, crypto), prisma };
   }
@@ -27,6 +28,12 @@ describe('IntegrationsService', () => {
   it('allows only owner to connect/disconnect and validates credentials', async () => {
     const { service } = setup({ role: WorkspaceRole.EDITOR });
     await expect(service.connect('u', 'w', IntegrationKind.GITHUB, { token: 'long-enough' })).rejects.toBeInstanceOf(ForbiddenException);
+    const manager = setup({ role: WorkspaceRole.MANAGER, workspace: { archivedAt: null } });
+    await expect(manager.service.list('u', 'w')).resolves.toHaveLength(1);
+    await expect(manager.service.connect('u', 'w', IntegrationKind.GITHUB, { token: 'long-enough' })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(manager.service.disconnect('u', 'w', IntegrationKind.GITHUB)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(manager.prisma.integrationConnection.upsert).not.toHaveBeenCalled();
+    expect(manager.prisma.integrationConnection.update).not.toHaveBeenCalled();
     const owner = setup();
     await expect(owner.service.connect('u', 'w', IntegrationKind.GITHUB, { token: 'short' })).rejects.toBeInstanceOf(BadRequestException);
     await expect(owner.service.connect('u', 'w', IntegrationKind.GITHUB, { token: 'long-enough' })).resolves.not.toHaveProperty('encryptedCredentials');
@@ -38,6 +45,12 @@ describe('IntegrationsService', () => {
     expect(prisma.integrationConnection.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ encryptedCredentials: null, status: IntegrationStatus.DISCONNECTED }) }));
     prisma.integrationConnection.findUnique.mockResolvedValue({ id: 'c', status: IntegrationStatus.DISCONNECTED, encryptedCredentials: null });
     await expect(service.activeCredentials('w', IntegrationKind.GITHUB)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('invalidates mapped external destinations when owner replaces provider credentials', async () => {
+    const { service, prisma } = setup();
+    await service.connect('u', 'w', IntegrationKind.GITHUB, { token: 'a-different-long-token' });
+    expect(prisma.integrationProjectMapping.deleteMany).toHaveBeenCalledWith({ where: { connectionId: 'c' } });
   });
 
   it('rejects missing provider secrets before encryption and isolates workspace access', async () => {

@@ -1,13 +1,22 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import './workspaceNavigation.css';
 import { Brand } from '../../components/Brand';
 import { Icon } from '../../components/Icon';
 import { api } from '../../lib/api';
-import type { Project, User, Workspace, WorkspaceSummary } from '../../lib/types';
+import type { AccessRequest, User, WorkspaceSummary } from '../../lib/types';
 import type { Theme } from '../../lib/theme';
 import { ProjectWorkspace } from '../project/ProjectWorkspace';
+import { WorkspaceManagementHub } from './WorkspaceManagementHub';
 
 const ACTIVE_CONTEXT_KEY = 'athena.active-context';
+
+function greetingForCurrentTime() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Bom dia';
+  if (hour >= 12 && hour < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
 
 interface SavedContext { userId: string; workspaceId?: string; projectId?: string }
 
@@ -27,44 +36,77 @@ function readDirectProjectId() {
 
 export function Onboarding({ user, theme, onThemeChange, onLogout }: { user: User; theme: Theme; onThemeChange: (theme: Theme) => void; onLogout: () => void }) {
   const client = useQueryClient();
-  const savedContext = useState(() => readSavedContext(user.id))[0];
+  const savedContext = useState(() => {
+    const saved = readSavedContext(user.id);
+    const params = new URLSearchParams(window.location.search);
+    const workspaceId = params.get('workspace') ?? saved?.workspaceId;
+    const projectId = params.get('project') ?? saved?.projectId;
+    return workspaceId || projectId ? { userId: user.id, workspaceId: workspaceId ?? undefined, projectId: projectId ?? undefined } : saved;
+  })[0];
   const directProjectId = useState(readDirectProjectId)[0];
   const [workspaceId, setWorkspaceId] = useState<string | null>(directProjectId ? null : savedContext?.workspaceId ?? null);
-  const [projectId, setProjectId] = useState<string | null>(directProjectId ? null : savedContext?.projectId ?? null);
+  const [projectId, setProjectId] = useState<string | null>(() => directProjectId ? null : new URLSearchParams(window.location.search).get('project'));
   const [directRouteResolved, setDirectRouteResolved] = useState(!directProjectId);
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
-  const [creatingProject, setCreatingProject] = useState(false);
-  const [workspaceName, setWorkspaceName] = useState('');
-  const [projectName, setProjectName] = useState('');
-  const [projectKey, setProjectKey] = useState('');
-  const workspaces = useQuery<WorkspaceSummary[]>({ queryKey: ['workspaces'], queryFn: () => api('/workspaces') });
-  const workspace = workspaces.data?.find((item) => item.id === workspaceId) ?? null;
-  const project = workspace?.projects.find((item) => item.id === projectId) ?? null;
+  const [createInManagement, setCreateInManagement] = useState<{ type: 'workspace' } | { type: 'project'; workspaceId: string } | null>(null);
+  const [directAccessStatus, setDirectAccessStatus] = useState<'requesting' | 'pending' | 'denied' | 'error' | null>(directProjectId ? 'requesting' : null);
+  const [directAccessRequestId, setDirectAccessRequestId] = useState<string | null>(null);
+  const workspaces = useQuery<WorkspaceSummary[]>({ queryKey: ['workspaces', 'management'], queryFn: () => api('/workspaces?includeArchived=true'), refetchInterval: directAccessStatus === 'pending' ? 3000 : false });
+  const accessRequests = useQuery<AccessRequest[]>({ queryKey: ['access-requests', 'mine'], queryFn: () => api('/access-requests/mine'), enabled: directAccessStatus === 'pending', refetchInterval: directAccessStatus === 'pending' ? 3000 : false });
+  const workspace = workspaces.data?.find((item) => item.id === workspaceId && !item.archivedAt) ?? null;
+  const project = workspace?.projects.find((item) => item.id === projectId && !item.archivedAt) ?? null;
+
+  const requestAccess = useMutation({
+    mutationFn: () => api<{ status: 'PENDING' | 'ALREADY_HAS_ACCESS'; request?: { id: string } }>(`/projects/${directProjectId}/access-requests`, { method: 'POST' }),
+    onSuccess: async (result) => {
+      setDirectAccessRequestId(result.request?.id ?? null);
+      if (result.status === 'ALREADY_HAS_ACCESS') {
+        setDirectAccessStatus('requesting');
+        await client.invalidateQueries({ queryKey: ['workspaces'] });
+      } else setDirectAccessStatus('pending');
+    },
+    onError: () => setDirectAccessStatus('error'),
+  });
 
   useEffect(() => {
-    if (!workspaces.data || !directProjectId || directRouteResolved) return;
+    if (!workspaces.data || !directProjectId) return;
     const routedWorkspace = workspaces.data.find((item) => item.projects.some((candidate) => candidate.id === directProjectId));
-    setDirectRouteResolved(true);
-    if (routedWorkspace) {
+    const routedProject = routedWorkspace?.projects.find(candidate => candidate.id === directProjectId);
+    if (routedWorkspace && !routedWorkspace.archivedAt && routedProject && !routedProject.archivedAt) {
+      setDirectRouteResolved(true);
+      setDirectAccessStatus(null);
       setWorkspaceId(routedWorkspace.id);
       setProjectId(directProjectId);
-    } else {
-      // An invalid or unauthorized direct URL must not fall back to a saved project.
+    } else if (routedWorkspace) {
+      // Archived items are visible to Owners in management, but cannot be opened or requested through a direct link.
+      setDirectRouteResolved(true);
+      setDirectAccessStatus(null);
       setWorkspaceId(null);
       setProjectId(null);
-      window.history.replaceState({}, '', '/');
+    } else if (!directRouteResolved) {
+      // Create the request using the project id from the URL. No project data is fetched here.
+      setDirectRouteResolved(true);
+      setWorkspaceId(null);
+      setProjectId(null);
+      requestAccess.mutate();
     }
-  }, [directProjectId, directRouteResolved, workspaces.data]);
+  }, [directProjectId, directRouteResolved, requestAccess.mutate, workspaces.data]);
+
+  useEffect(() => {
+    if (!directAccessRequestId) return;
+    const current = accessRequests.data?.find((request) => request.id === directAccessRequestId);
+    if (current?.status === 'DENIED') setDirectAccessStatus('denied');
+    if (current?.status === 'APPROVED') void client.invalidateQueries({ queryKey: ['workspaces'] });
+  }, [accessRequests.data, client, directAccessRequestId]);
 
   useEffect(() => {
     if (!workspaces.data) return;
-    const validWorkspace = workspaces.data.some((item) => item.id === workspaceId);
+    const validWorkspace = workspaces.data.some((item) => item.id === workspaceId && !item.archivedAt);
     if (workspaceId && !validWorkspace) {
       setWorkspaceId(null);
       setProjectId(null);
       return;
     }
-    const validProject = workspaces.data.find((item) => item.id === workspaceId)?.projects.some((item) => item.id === projectId);
+    const validProject = workspaces.data.find((item) => item.id === workspaceId && !item.archivedAt)?.projects.some((item) => item.id === projectId && !item.archivedAt);
     if (projectId && !validProject) setProjectId(null);
   }, [projectId, workspaceId, workspaces.data]);
 
@@ -72,28 +114,6 @@ export function Onboarding({ user, theme, onThemeChange, onLogout }: { user: Use
     localStorage.setItem(ACTIVE_CONTEXT_KEY, JSON.stringify({ userId: user.id, workspaceId: workspaceId ?? undefined, projectId: projectId ?? undefined }));
   }, [projectId, user.id, workspaceId]);
 
-  const createWorkspace = useMutation({
-    mutationFn: () => api<Workspace>('/workspaces', { method: 'POST', body: JSON.stringify({ name: workspaceName.trim() }) }),
-    onSuccess: async (created) => {
-      client.setQueryData<WorkspaceSummary[]>(['workspaces'], (current = []) => [...current, { ...created, role: 'OWNER', projects: [] }]);
-      setWorkspaceId(created.id);
-      setProjectId(null);
-      setCreatingWorkspace(false);
-      setWorkspaceName('');
-      await client.invalidateQueries({ queryKey: ['workspaces'] });
-    },
-  });
-  const createProject = useMutation({
-    mutationFn: () => api<Project>(`/workspaces/${workspaceId!}/projects`, { method: 'POST', body: JSON.stringify({ name: projectName.trim(), key: projectKey.trim().toUpperCase() }) }),
-    onSuccess: async (created) => {
-      client.setQueryData<WorkspaceSummary[]>(['workspaces'], (current = []) => current.map((item) => item.id === workspaceId ? { ...item, projects: [...item.projects, created] } : item));
-      setProjectId(created.id);
-      setCreatingProject(false);
-      setProjectName('');
-      setProjectKey('');
-      await client.invalidateQueries({ queryKey: ['workspaces'] });
-    },
-  });
   const logout = useMutation({
     mutationFn: () => api<{ ok: true }>('/auth/logout', { method: 'POST' }),
     onSuccess: () => {
@@ -106,99 +126,26 @@ export function Onboarding({ user, theme, onThemeChange, onLogout }: { user: Use
   if (workspaces.isLoading) return <StatePage loading title="Carregando seus workspaces" theme={theme}/>;
   if (workspaces.isError) return <StatePage title="Não foi possível carregar seus workspaces" message={workspaces.error.message} theme={theme} onRetry={() => workspaces.refetch()} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
-  if (workspace && project) return <ProjectWorkspace user={user} workspace={workspace} project={project} theme={theme} onThemeChange={onThemeChange} onChangeContext={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); }} onBrowseWorkspaces={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(false); setCreatingProject(false); }} onCreateWorkspace={() => { setWorkspaceId(null); setProjectId(null); setCreatingWorkspace(true); }} onCreateProject={() => { setProjectId(null); setCreatingProject(true); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
+  if (directProjectId && directAccessStatus) return <AccessRequestPage status={directAccessStatus} message={requestAccess.error instanceof Error ? requestAccess.error.message : undefined} onRetry={() => { setDirectAccessRequestId(null); setDirectAccessStatus('requesting'); requestAccess.mutate(); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
-  const workspaceList = workspaces.data ?? [];
-  if (workspaceList.length > 0 && !workspace && !creatingWorkspace) {
-    return <SelectionPage
-      kicker="Seu ambiente"
-      title={`Bem-vindo, ${user.name}`}
-      description="Selecione o workspace em que deseja trabalhar."
-      items={workspaceList.map((item) => ({ id: item.id, badge: item.role, title: item.name, detail: `${item.projects.length} ${item.projects.length === 1 ? 'projeto' : 'projetos'}` }))}
-      onSelect={(id) => { setWorkspaceId(id); setProjectId(null); setCreatingProject(false); }}
-      onCreate={() => { createWorkspace.reset(); setCreatingWorkspace(true); }}
-      createLabel="Criar novo workspace"
-      step={1}
-      onLogout={() => logout.mutate()}
-      logoutPending={logout.isPending}
-    />;
-  }
+  if (workspace && project) return <ProjectWorkspace user={user} workspace={workspace} project={project} theme={theme} onThemeChange={onThemeChange} onChangeContext={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); }} onBrowseWorkspaces={() => setProjectId(null)} onManageWorkspaces={() => setProjectId(null)} onCreateWorkspace={() => { setProjectId(null); setCreateInManagement({ type: 'workspace' }); }} onCreateProject={(nextWorkspaceId) => { const targetWorkspaceId = nextWorkspaceId ?? workspace.id; setWorkspaceId(targetWorkspaceId); setProjectId(null); setCreateInManagement({ type: 'project', workspaceId: targetWorkspaceId }); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 
-  if (workspace && workspace.projects.length > 0 && !project && !creatingProject) {
-    return <SelectionPage
-      kicker={workspace.name}
-      title="Selecione um projeto"
-      description="Escolha o projeto que deseja abrir neste workspace."
-      items={workspace.projects.map((item) => ({ id: item.id, badge: item.key.slice(0, 3), title: item.name, detail: item.key }))}
-      onSelect={setProjectId}
-      onCreate={() => { createProject.reset(); setCreatingProject(true); }}
-      createLabel="Criar novo projeto"
-      step={2}
-      onBack={() => { setWorkspaceId(null); setProjectId(null); }}
-      onLogout={() => logout.mutate()}
-      logoutPending={logout.isPending}
-    />;
-  }
-
-  const isWorkspaceStep = !workspace;
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (isWorkspaceStep) createWorkspace.mutate(); else createProject.mutate();
-  };
-  const mutation = isWorkspaceStep ? createWorkspace : createProject;
-
-  const currentStep = isWorkspaceStep ? 1 : 2;
-  return (
-    <main className="onboarding-page">
-      <header className="auth-nav"><Brand/><button className="secondary-button" onClick={() => logout.mutate()} disabled={logout.isPending}><Icon name="logout" size={14}/> Sair</button></header>
-      <section className="onboarding-card">
-        <ProgressSteps current={currentStep}/>
-        <p className="section-kicker">{isWorkspaceStep ? 'Novo workspace' : 'Novo projeto'}</p>
-        <h1>{isWorkspaceStep ? `Crie seu workspace` : 'Crie um projeto'}</h1>
-        <p>{isWorkspaceStep ? 'O workspace reúne pessoas e projetos da sua organização.' : `O projeto ficará dentro de ${workspace?.name}.`}</p>
-        <form onSubmit={submit}>
-          {isWorkspaceStep ? (
-            <label>Nome do workspace<input autoFocus required maxLength={120} value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="Ex.: Minha organização"/></label>
-          ) : <><label>Nome do projeto<input autoFocus required maxLength={120} value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Ex.: Plataforma de clientes"/></label><label>Chave do projeto<input required maxLength={16} value={projectKey} onChange={(e) => setProjectKey(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))} placeholder="Ex.: PORTAL"/></label></>}
-          {mutation.error && <div className="inline-error" role="alert">{mutation.error.message}</div>}
-          <button className="primary-button" disabled={mutation.isPending}>{mutation.isPending ? 'Criando…' : isWorkspaceStep ? 'Criar workspace' : 'Criar projeto'}<Icon name="chevron" size={15}/></button>
-          {(isWorkspaceStep ? workspaceList.length > 0 : Boolean(workspace?.projects.length)) && <button type="button" className="text-button" onClick={() => { if (isWorkspaceStep) setCreatingWorkspace(false); else setCreatingProject(false); }}>Voltar para a seleção</button>}
-        </form>
-        <small className="onboarding-note">Os dados informados serão salvos no seu ambiente ATHENA.</small>
-      </section>
-    </main>
-  );
+  return <WorkspaceManagementHub user={user} workspaces={workspaces.data ?? []} theme={theme} onThemeChange={onThemeChange} initialWorkspaceId={workspaceId ?? undefined} initialCreateWorkspace={createInManagement?.type === 'workspace'} initialCreateProjectWorkspaceId={createInManagement?.type === 'project' ? createInManagement.workspaceId : undefined} greeting={`${greetingForCurrentTime()}, ${user.name}`} onInitialCreateRequestHandled={() => setCreateInManagement(null)} onOpenProject={(nextWorkspaceId, nextProjectId) => { setWorkspaceId(nextWorkspaceId); setProjectId(nextProjectId); setCreateInManagement(null); }} onLogout={() => logout.mutate()} logoutPending={logout.isPending}/>;
 }
 
-interface SelectionItem { id: string; badge: string; title: string; detail: string }
-
-function ProgressSteps({ current }: { current: 1 | 2 }) {
-  return <ol className="context-progress" aria-label={`Etapa ${current} de 2`}>
-    <li className={current >= 1 ? 'complete' : ''}><span>1</span><strong>Workspace</strong></li>
-    <li aria-hidden="true"/>
-    <li className={current === 2 ? 'current' : ''}><span>2</span><strong>Projeto</strong></li>
-  </ol>;
-}
-
-function SelectionPage({ kicker, title, description, items, onSelect, onCreate, createLabel, step, onBack, onLogout, logoutPending }: { kicker: string; title: string; description: string; items: SelectionItem[]; onSelect: (id: string) => void; onCreate: () => void; createLabel: string; step: 1 | 2; onBack?: () => void; onLogout: () => void; logoutPending: boolean }) {
+function AccessRequestPage({ status, message, onRetry, onLogout, logoutPending }: { status: 'requesting' | 'pending' | 'denied' | 'error'; message?: string; onRetry: () => void; onLogout: () => void; logoutPending: boolean }) {
+  const requesting = status === 'requesting';
+  const denied = status === 'denied';
+  const failed = status === 'error';
   return <main className="onboarding-page">
     <header className="auth-nav"><Brand/><button className="secondary-button" onClick={onLogout} disabled={logoutPending}><Icon name="logout" size={14}/> Sair</button></header>
-    <section className="onboarding-card selection-card">
-      <ProgressSteps current={step}/>
-      <p className="section-kicker">{kicker}</p>
-      <h1>{title}</h1>
-      <p>{description}</p>
-      <div className="context-list">
-        {items.map((item) => <button key={item.id} className="context-option" onClick={() => onSelect(item.id)}>
-          <span className="project-key">{item.badge.slice(0, 3).toUpperCase()}</span>
-          <span><strong>{item.title}</strong><small>{item.detail}</small></span>
-          <Icon name="chevron" size={14}/>
-        </button>)}
-      </div>
-      <div className="selection-actions">
-        {onBack && <button type="button" className="secondary-button selection-back" onClick={onBack}><Icon name="back" size={14}/> Voltar</button>}
-        <button className="secondary-button" onClick={onCreate}><Icon name="plus" size={14}/>{createLabel}</button>
-      </div>
+    <section className="onboarding-card access-request-card" aria-live="polite">
+      <span className="state-symbol"><Icon name={requesting ? 'refresh' : failed || denied ? 'close' : 'users'} size={20}/></span>
+      <p className="section-kicker">Acesso ao projeto</p>
+      <h1>{requesting ? 'Enviando pedido' : denied ? 'Pedido recusado' : failed ? 'Não foi possível pedir acesso' : 'Pedido enviado'}</h1>
+      <p>{requesting ? 'Estamos encaminhando sua solicitação aos Owners do workspace.' : denied ? 'Um Owner recusou este pedido. Você pode enviar uma nova solicitação pelo mesmo link.' : failed ? (message ?? 'Tente novamente em instantes.') : 'Um Owner precisa aprovar seu acesso. A página vai abrir automaticamente quando sua permissão for liberada.'}</p>
+      {(failed || denied) && <button type="button" className="primary-button" onClick={onRetry}>{denied ? 'Pedir acesso novamente' : 'Tentar novamente'} <Icon name="chevron" size={15}/></button>}
+      {!failed && !requesting && !denied && <small className="onboarding-note">O conteúdo da User Story permanece restrito até a aprovação.</small>}
     </section>
   </main>;
 }

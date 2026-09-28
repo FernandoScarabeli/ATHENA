@@ -39,14 +39,43 @@ describe('direct project routes', () => {
     expect(host.querySelector('[data-testid="project-context"]')?.textContent).toBe('w2/p2');
   });
 
-  it('does not expose a saved project when the direct URL is unauthorized or missing', async () => {
+  it('creates an access request for an unauthorized direct project without exposing saved or project content', async () => {
     localStorage.setItem('athena.active-context', JSON.stringify({ userId: user.id, workspaceId: 'w1', projectId: 'p1' }));
     window.history.replaceState({}, '', '/projects/p-secret/requirements/r2/edit');
     await mount();
     await settle();
     expect(host.querySelector('[data-testid="project-context"]')).toBeNull();
-    expect(host.textContent).toContain('Workspace salvo');
     expect(host.textContent).not.toContain('Projeto salvo');
-    expect(window.location.pathname).toBe('/');
+    expect(host.textContent).toContain('Pedido enviado');
+    expect(vi.mocked(api)).toHaveBeenCalledWith('/projects/p-secret/access-requests', { method: 'POST' });
+    expect(window.location.pathname).toBe('/projects/p-secret/requirements/r2/edit');
+  });
+
+  it('shows a rejection in the app and lets the person send a new request from the same link', async () => {
+    let accessRequestCount = 0;
+    vi.mocked(api).mockImplementation(async (path, init) => {
+      if (path === '/workspaces' || path === '/workspaces?includeArchived=true') return [] as never;
+      if (path === '/projects/p-secret/access-requests' && init?.method === 'POST') {
+        accessRequestCount += 1;
+        return { status: 'PENDING', request: { id: `req-${accessRequestCount}` } } as never;
+      }
+      if (path === '/access-requests/mine') return [{ id: 'req-1', projectId: 'p-secret', status: 'DENIED' }] as never;
+      return [] as never;
+    });
+    window.history.replaceState({}, '', '/projects/p-secret/requirements/r2/edit');
+    await mount();
+    await settle();
+
+    await settle();
+    expect(host.textContent).toContain('Pedido recusado');
+    expect(host.textContent).not.toContain('Conteúdo da US');
+
+    const retry = Array.from(host.querySelectorAll('button')).find(button => button.textContent?.includes('Pedir acesso novamente'));
+    expect(retry).toBeTruthy();
+    const requestsBeforeRetry = vi.mocked(api).mock.calls.filter(([path, init]) => path === '/projects/p-secret/access-requests' && init?.method === 'POST').length;
+    await act(async () => retry?.click());
+    await settle();
+    const requestsAfterRetry = vi.mocked(api).mock.calls.filter(([path, init]) => path === '/projects/p-secret/access-requests' && init?.method === 'POST').length;
+    expect(requestsAfterRetry).toBe(requestsBeforeRetry + 1);
   });
 });

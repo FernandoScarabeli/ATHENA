@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RequirementEditor } from './RequirementEditor';
 import { api, ApiError } from '../../lib/api';
-import type { Requirement, WorkspaceRole } from '../../lib/types';
+import type { Requirement, RequirementRelation, WorkspaceRole } from '../../lib/types';
 
 vi.mock('../../lib/api', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/api')>(), api: vi.fn() }));
 let host: HTMLDivElement;
@@ -27,18 +27,19 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   client.setQueryData(['requirement', 'r1'], structuredClone(initial));
-  client.setQueryData(['folders', 'w1'], [{ id: 'f1', workspaceId: 'w1', name: 'Login' }]);
+  client.setQueryData(['folders', 'p1'], [{ id: 'f1', workspaceId: 'w1', projectId: 'p1', name: 'Login' }]);
   client.setQueryData(['comments', 'r1'], []);
   client.setQueryData(['references', 'r1'], [{ id: 'ref1', type: 'PROTOTYPE', name: 'Tela de login', url: 'https://example.com' }]);
-  client.setQueryData(['participants', 'w1'], []);
+  client.setQueryData(['relations', 'r1'], [{ id: 'rel1', sourceId: 'r1', targetId: 'r2', type: 'DEPENDS_ON', source: initial, target: { ...initial, id: 'r2', code: 'US-002', title: 'Criar conta' } }]);
+  client.setQueryData(['participants', 'p1'], []);
   client.setQueryData(['versions', 'r1'], [
     { id: null, requirementId: 'r1', revision: 4, current: true, createdAt: '2026-01-04T10:00:00Z', snapshot: { revision: 4, title: 'Login', content: initial.content, folderId: 'f1', status: 'DRAFT', criteria: initial.criteria } },
     { id: 'v3', requirementId: 'r1', revision: 3, createdAt: '2026-01-03T10:00:00Z', snapshot: { revision: 3, title: 'Login antigo', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Documento histórico' }] }] }, folderId: 'f1', status: 'DRAFT', criteria: [] } },
   ]);
 });
 afterEach(() => { act(() => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals(); });
-const mount = async (role: WorkspaceRole = 'EDITOR') => {
-  await act(async () => root.render(<QueryClientProvider client={client}><RequirementEditor projectId="p1" requirementId="r1" workspace={{ id: 'w1', name: 'Produto', role }} user={{ id: 'u1', name: 'Pessoa', email: 'pessoa@example.com' }} onClose={onClose}/></QueryClientProvider>));
+const mount = async (role: WorkspaceRole = 'EDITOR', onNavigateRequirement = vi.fn(), canReturnToPreviousRequirement = false, onReturnToPreviousRequirement = vi.fn()) => {
+  await act(async () => root.render(<QueryClientProvider client={client}><RequirementEditor projectId="p1" requirementId="r1" workspace={{ id: 'w1', name: 'Produto', role }} user={{ id: 'u1', name: 'Pessoa', email: 'pessoa@example.com' }} onClose={onClose} onNavigateRequirement={onNavigateRequirement} canReturnToPreviousRequirement={canReturnToPreviousRequirement} onReturnToPreviousRequirement={onReturnToPreviousRequirement}/></QueryClientProvider>));
 };
 const button = (name: string) => {
   const result = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(node => node.getAttribute('aria-label') === name || node.textContent === name);
@@ -64,6 +65,79 @@ describe('requirement document workflow', () => {
     await click('Critério');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Título do critério 2');
     expect(button('Salvar').disabled).toBe(false);
+  });
+
+  it('shows related stories and keeps external links in their own section', async () => {
+    const navigate = vi.fn();
+    await mount('EDITOR', navigate, true);
+    expect(host.querySelector('.related-stories-panel')).toBeNull();
+    await click('Referências: US relacionadas');
+    expect(host.querySelector('.related-stories-panel')?.textContent).toContain('US-001');
+    expect(host.querySelector('.related-stories-panel')?.textContent).toContain('US-002');
+    expect(host.querySelector('.related-stories-panel')?.textContent).toContain('Pré-requisito · US-001 depende de US-002');
+    await click('Abrir US-002 Criar conta');
+    expect(navigate).toHaveBeenCalledWith('r2');
+    expect(host.querySelector('.related-stories-back')).toBeTruthy();
+    await click('Referências: US relacionadas');
+    expect(host.querySelector('.related-stories-panel')).toBeNull();
+    await click('Referências: US relacionadas');
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-controls="document-references"]')?.click());
+    expect(host.querySelector('#document-references a')?.getAttribute('href')).toBe('https://example.com');
+    expect(host.textContent).toContain('Tela de login');
+  });
+
+  it('explains repeated stories from old multiple relations in the editor panel', async () => {
+    const existing = client.getQueryData<RequirementRelation[]>(['relations', 'r1'])![0];
+    client.setQueryData(['relations', 'r1'], [existing, { ...existing, id: 'rel2', type: 'BLOCKS', sourceId: 'r2', targetId: 'r1', source: existing.target, target: existing.source }]);
+    await mount();
+    await click('Referências: US relacionadas');
+    expect(host.querySelectorAll('.related-story-link')).toHaveLength(2);
+    expect(host.querySelector('.related-stories-legacy')?.textContent).toContain('relações antigas diferentes');
+  });
+
+  it('keeps empty acceptance criteria collapsed and reports an empty relations state', async () => {
+    client.setQueryData(['requirement', 'r1'], { ...initial, criteria: [] });
+    client.setQueryData(['relations', 'r1'], []);
+    await mount();
+    expect(host.querySelector<HTMLElement>('#document-criteria')?.hidden).toBe(true);
+    await click('Referências: US relacionadas');
+    expect(host.querySelector('.related-stories-panel')?.textContent).toContain('Esta US ainda não tem relações.');
+  });
+
+  it('keeps related navigation disabled until a save finishes', async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(api).mockImplementation(async (_path, init) => init?.method === 'PATCH' ? new Promise(resolve => { finish = resolve; }) as never : [] as never);
+    await mount();
+    await click('Referências: US relacionadas');
+    await changeTitle('Login atualizado');
+    await click('Salvar');
+    await settle();
+    expect(host.querySelector<HTMLButtonElement>('.related-story-link')?.disabled).toBe(true);
+    const submitted = JSON.parse(vi.mocked(api).mock.calls.find(([, init]) => init?.method === 'PATCH')![1]!.body as string);
+    await act(async () => finish({ ...initial, title: submitted.title, content: submitted.content, status: 'ACTIVE', revision: 5 }));
+    await settle();
+    expect(host.querySelector<HTMLButtonElement>('.related-story-link')?.disabled).toBe(false);
+  });
+
+  it('retries when related stories fail to load', async () => {
+    client.removeQueries({ queryKey: ['relations', 'r1'] });
+    let attempts = 0;
+    vi.mocked(api).mockImplementation(async path => {
+      if (path === '/requirements/r1/relations') {
+        attempts += 1;
+        if (attempts === 1) throw new Error('Sem conexão');
+        return [] as never;
+      }
+      return undefined as never;
+    });
+    await mount();
+    await click('Referências: US relacionadas');
+    await settle();
+    expect(host.querySelector('.related-stories-panel [role="alert"]')?.textContent).toContain('Sem conexão');
+    await click('Tentar novamente');
+    await settle();
+    expect(host.querySelector('.related-stories-panel')?.textContent).toContain('Esta US ainda não tem relações.');
+    expect(attempts).toBe(2);
   });
 
   it('opens one panel at a time and closes the overlay with Escape', async () => {
@@ -98,18 +172,29 @@ describe('requirement document workflow', () => {
     expect(title().disabled).toBe(true);
     expect(host.querySelector('[role="toolbar"]')).toBeNull();
     expect(host.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false');
+    await click('Referências: US relacionadas');
+    expect(host.querySelector('.related-stories-heading')?.textContent).toContain('Somente leitura');
     await click('Comentários');
     expect(Boolean(host.querySelector('textarea'))).toBe(true);
     expect(api).not.toHaveBeenCalled();
   });
 
+  it('shows edit mode to an OWNER', async () => {
+    await mount('OWNER');
+    expect(title().disabled).toBe(false);
+    await click('Referências: US relacionadas');
+    expect(host.querySelector('.related-stories-heading')?.textContent).toContain('Modo de edição');
+  });
+
   it('opens an archived requirement by direct route in read-only mode', async () => {
     client.setQueryData(['requirement', 'r1'], { ...initial, status: 'ARCHIVED' });
     await mount('EDITOR');
+    await click('Referências: US relacionadas');
     expect(title().disabled).toBe(true);
     expect(host.querySelector('[role="toolbar"]')).toBeNull();
     expect(host.querySelector('button')?.textContent).not.toContain('Salvar');
     expect(host.textContent).toContain('cancelada e disponível somente para consulta');
+    expect(host.querySelector('.related-stories-heading')?.textContent).toContain('Somente leitura');
     await click('Comentários');
     expect(host.querySelector('textarea')).toBeNull();
     expect(api).not.toHaveBeenCalled();

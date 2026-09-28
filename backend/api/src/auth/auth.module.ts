@@ -18,6 +18,6 @@ import { TransactionalEmailService } from "./transactional-email.service";
     JwtCookieGuard,
   ],
   controllers: [AuthController, InviteController],
-  exports: [JwtCookieGuard, JwtModule],
+  exports: [JwtCookieGuard, JwtModule, InviteService, TransactionalEmailService],
 })
 export class AuthModule {}

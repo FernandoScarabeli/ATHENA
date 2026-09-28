@@ -5,6 +5,7 @@ describe('GithubService', () => {
   function setup() {
     const prisma: any = {
       workspaceMember: { findUnique: jest.fn().mockResolvedValue({ role: 'OWNER' }) },
+      workspace: { findUnique: jest.fn().mockResolvedValue({ archivedAt: null }) },
       integrationConnection: { findUnique: jest.fn().mockResolvedValue({ id: 'conn' }), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'conn' }) },
       integrationSource: { upsert: jest.fn().mockResolvedValue({ id: 'source' }) },
       integrationCandidate: { upsert: jest.fn().mockResolvedValue({ id: 'candidate', externalId: 'github:acme/repo:docs/a.md', title: 'a.md', status: 'PENDING' }) },

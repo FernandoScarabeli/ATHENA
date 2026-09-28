@@ -31,7 +31,7 @@ O último Owner não pode ser removido nem rebaixado. Usuários de outro workspa
 3. Selecionar US → grafo focado → consultar detalhes e criar/remover relações conforme papel.
 4. Comentar trecho, responder, mencionar, resolver/reabrir → receber notificação interna.
 5. Consultar versões e comparar diferenças; cancelar US e encontrá-la em Canceladas, somente leitura.
-6. Após ativação, executar análise de IA assíncrona → apresentar sugestões justificadas → aprovar ou descartar uma a uma.
+6. No mapa, iniciar análise de IA assíncrona sob demanda → apresentar propostas justificadas com trechos de evidência → aprovar ou descartar uma a uma.
 7. Conectar GitHub/Google com credenciais autorizadas → importar candidatos revisáveis → sincronizar sem alterar automaticamente a US canônica.
 
 ## Contratos e limites

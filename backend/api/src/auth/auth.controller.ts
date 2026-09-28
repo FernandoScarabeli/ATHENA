@@ -13,12 +13,13 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { WorkspaceRole } from "@prisma/client";
+import { ProjectRole, WorkspaceRole } from "@prisma/client";
 import {
   IsBoolean,
   IsEmail,
   IsIn,
   IsOptional,
+  Matches,
   IsString,
   MinLength,
 } from "class-validator";
@@ -48,13 +49,16 @@ class EmailDto {
   @IsEmail() email!: string;
   @IsOptional() @IsString() returnTo?: string;
 }
-class ResetDto extends TokenDto {
+class ResetDto {
+  @IsOptional() @IsString() token?: string;
+  @IsOptional() @IsEmail() email?: string;
+  @IsOptional() @Matches(/^\d{6}$/) code?: string;
   @IsString() password!: string;
   @IsString() passwordConfirmation!: string;
 }
 class InviteDto {
   @IsEmail() email!: string;
-  @IsIn([WorkspaceRole.EDITOR, WorkspaceRole.VIEWER]) role!: WorkspaceRole;
+  @IsIn([WorkspaceRole.MANAGER, WorkspaceRole.EDITOR, WorkspaceRole.VIEWER]) role!: WorkspaceRole;
 }
 
 @Controller("auth")
@@ -156,10 +160,21 @@ export class AuthController {
   }
 
   @Post("reset-password")
-  async reset(@Body() dto: ResetDto) {
+  async reset(@Body() dto: ResetDto, @Req() request: Request) {
     if (dto.password !== dto.passwordConfirmation)
       throw new BadRequestException("As senhas precisam coincidir.");
-    await this.auth.reset(dto.token, dto.password);
+    if (dto.token && !dto.email && !dto.code) {
+      await this.auth.reset(dto.token, dto.password);
+    } else if (!dto.token && dto.email && dto.code) {
+      await this.auth.resetWithCode(
+        dto.email,
+        dto.code,
+        dto.password,
+        this.ip(request),
+      );
+    } else {
+      throw new BadRequestException("Informe um link ou código de redefinição.");
+    }
     return { ok: true };
   }
 
@@ -251,6 +266,30 @@ export class InviteController {
     @Param("id") id: string,
   ) {
     return this.invites.revoke(userFrom(request).sub, workspaceId, id);
+  }
+
+  @UseGuards(JwtCookieGuard)
+  @Post("projects/:projectId/invites")
+  createProject(@Req() request: Request, @Param("projectId") projectId: string, @Body() dto: InviteDto) {
+    return this.invites.createProject(userFrom(request).sub, projectId, dto.email, dto.role as ProjectRole);
+  }
+
+  @UseGuards(JwtCookieGuard)
+  @Get("projects/:projectId/invites")
+  listProject(@Req() request: Request, @Param("projectId") projectId: string) {
+    return this.invites.listProject(userFrom(request).sub, projectId);
+  }
+
+  @UseGuards(JwtCookieGuard)
+  @Post("projects/:projectId/invites/:id/resend")
+  resendProject(@Req() request: Request, @Param("projectId") projectId: string, @Param("id") id: string) {
+    return this.invites.resendProject(userFrom(request).sub, projectId, id);
+  }
+
+  @UseGuards(JwtCookieGuard)
+  @Delete("projects/:projectId/invites/:id")
+  revokeProject(@Req() request: Request, @Param("projectId") projectId: string, @Param("id") id: string) {
+    return this.invites.revokeProject(userFrom(request).sub, projectId, id);
   }
 
   @Get("invites/resolve")

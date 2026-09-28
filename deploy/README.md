@@ -13,7 +13,7 @@ Se preferir usar o PNPM, o mesmo menu pode ser chamado com
 O menu reutiliza os Compose e scripts já existentes. `Docker dev` usa Vite HMR
 e Nest watch; `Docker normal` usa a stack padrão; os comandos de demo chamam
 os scripts Tailscale Funnel existentes. Todos os caminhos de subida do menu
-sobem automaticamente API, PostgreSQL e Ollama juntos.
+sobem automaticamente API e PostgreSQL juntos.
 
 Backups ficam em `deploy/backups/`, ignorados pelo Git. Antes de qualquer reset do
 banco, o menu exige um `pg_dump` com timestamp, a senha local cujo hash SHA-256

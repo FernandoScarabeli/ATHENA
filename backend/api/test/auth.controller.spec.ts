@@ -79,6 +79,42 @@ describe("AuthController cookies", () => {
   });
 });
 
+describe("AuthController password reset", () => {
+  const dto = {
+    password: "nova-senha-segura-123",
+    passwordConfirmation: "nova-senha-segura-123",
+  };
+
+  it("forwards an OTP reset with the requesting IP", async () => {
+    const auth = { resetWithCode: jest.fn().mockResolvedValue(undefined) };
+    const controller = new AuthController(auth as never, {} as never);
+    await expect(
+      controller.reset(
+        { ...dto, email: "person@example.com", code: "001234" },
+        { ip: "127.0.0.1" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(auth.resetWithCode).toHaveBeenCalledWith(
+      "person@example.com",
+      "001234",
+      dto.password,
+      "127.0.0.1",
+    );
+  });
+
+  it("continues to accept reset links already delivered by email", async () => {
+    const auth = { reset: jest.fn().mockResolvedValue(undefined) };
+    const controller = new AuthController(auth as never, {} as never);
+    await expect(
+      controller.reset(
+        { ...dto, token: "legacy-reset-token" },
+        { ip: "127.0.0.1" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(auth.reset).toHaveBeenCalledWith("legacy-reset-token", dto.password);
+  });
+});
+
 describe("JwtCookieGuard", () => {
   const context = (request: object) => ({
     switchToHttp: () => ({ getRequest: () => request }),
