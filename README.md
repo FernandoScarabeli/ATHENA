@@ -15,7 +15,7 @@ Navegador
                                   └── Nest API ──► PostgreSQL + pgvector
                                                         └── volume postgres_data
 
-Netlify (modo demo) ──► Edge Function /api ──► Tailscale Funnel ──► API local
+Netlify (modo demo) ──► Edge Function /api ──► Quick Tunnel ou Funnel ──► API local
 ```
 
 | Diretório | Responsabilidade |
@@ -31,7 +31,7 @@ Netlify (modo demo) ──► Edge Function /api ──► Tailscale Funnel ─�
 
 - Node.js `>=20.19` e Corepack; o repositório usa PNPM `9.15.4`.
 - Docker Engine com Docker Compose para os modos Docker, banco, backup e demo.
-- Para a demonstração pública: Tailscale instalado, autenticado e autorizado a usar Funnel, além de uma conta/site no Netlify.
+- Para a demonstração pública: Docker, conexão à internet e uma conta/site no Netlify. Cloudflare Quick Tunnel não exige conta Cloudflare; o modo Tailscale Funnel também está disponível.
 
 Instale as dependências uma vez:
 
@@ -127,6 +127,36 @@ Para parar sem remover banco ou volumes de dependências:
 corepack pnpm dev:docker:down
 ```
 
+## Demonstração: Netlify + Cloudflare Quick Tunnel
+
+Este modo publica o frontend pelo Netlify e encaminha `/api/*` pela Edge Function à API no Docker. O Cloudflare gera uma URL temporária `trycloudflare.com`; o PostgreSQL continua privado e a API não publica porta no host.
+
+1. Crie o site Netlify apontando para este repositório. O `netlify.toml` constrói `frontend/dist`, aplica fallback de SPA e entrega `/api/*` à Edge Function.
+2. Prepare o arquivo de demo:
+
+   ```bash
+   cp .env.demo.example .env.demo
+   ```
+
+   Preencha `NETLIFY_SITE_ORIGIN` e `APP_ORIGIN` com a origem HTTPS do site, configure uma chave Resend e remetente válidos, URLs/versões legais e segredos JWT exclusivos. Gere `INTEGRATION_ENCRYPTION_KEY` com `openssl rand -base64 32`; essa chave fica no `.env.demo` do host da API, nunca no Netlify.
+
+3. Inicie API, PostgreSQL e Quick Tunnel:
+
+   ```bash
+   corepack pnpm demo:cloudflare:on
+   ```
+
+   O comando imprime a URL HTTPS temporária. Configure-a no Netlify como variável de ambiente `API_TUNNEL_ORIGIN`, com escopo disponível às Edge Functions. Essa variável contém a origem pública do túnel, não uma chave secreta. Faça um novo deploy para aplicar o valor.
+
+4. Veja o estado ou desligue a demo:
+
+   ```bash
+   corepack pnpm demo:cloudflare:status
+   corepack pnpm demo:cloudflare:off
+   ```
+
+Quick Tunnels servem para desenvolvimento e testes. A URL aleatória muda quando um novo túnel é criado; atualize `API_TUNNEL_ORIGIN` e publique um novo deploy no Netlify cada vez que isso ocorrer. O Cloudflare limita cada túnel a 200 solicitações simultâneas e Quick Tunnels não dão suporte a Server-Sent Events. Use apenas dados de demonstração e mantenha o host e o Docker ligados durante o uso.
+
 ## Demonstração: Netlify + Tailscale Funnel
 
 Este modo publica o frontend pelo Netlify e expõe apenas a API do PC através do Funnel. No PC, a API é vinculada a `127.0.0.1`; PostgreSQL não publica porta.
@@ -146,7 +176,7 @@ Este modo publica o frontend pelo Netlify e expõe apenas a API do PC através d
    corepack pnpm demo:on
    ```
 
-4. Copie a origem HTTPS mostrada por `tailscale funnel status` e configure-a no Netlify como variável de ambiente de runtime `TAILSCALE_FUNNEL_ORIGIN`. Ela deve ser uma origem HTTPS sem caminho, por exemplo `https://maquina.tailnet.ts.net`. Faça um novo deploy no Netlify após alterar a variável.
+4. Copie a origem HTTPS mostrada por `tailscale funnel status` e configure-a no Netlify como variável de ambiente `API_TUNNEL_ORIGIN`. Ela deve ser uma origem HTTPS sem caminho, por exemplo `https://maquina.tailnet.ts.net`. Faça um novo deploy no Netlify após alterar a variável. `TAILSCALE_FUNNEL_ORIGIN` continua aceito para sites já configurados.
 
 Comandos operacionais:
 
@@ -203,13 +233,14 @@ Os scripts executam os pacotes do workspace recursivamente. A API usa Jest; o fr
 
 - Execute `corepack pnpm demo:status` para ver os containers da demo e o estado do Funnel.
 - Verifique se `.env.demo` existe, se `NETLIFY_SITE_ORIGIN` começa com `https://` e se os segredos JWT não usam defaults locais.
-- Se o Netlify responder `DEMO_PROXY_NOT_CONFIGURED`, configure `TAILSCALE_FUNNEL_ORIGIN` como origem HTTPS sem caminho e faça novo deploy.
+- Se o Netlify responder `DEMO_PROXY_NOT_CONFIGURED`, configure `API_TUNNEL_ORIGIN` como origem HTTPS sem caminho e faça novo deploy.
 - Se responder `DEMO_API_UNAVAILABLE`, confirme que o PC, Docker e Tailscale continuam online e verifique o healthcheck da API no modo demo.
 - Funnel requer MagicDNS, HTTPS e a permissão correspondente no tailnet; `tailscale funnel status` mostra a URL e o estado atual.
+- Para Quick Tunnel, rode `corepack pnpm demo:cloudflare:status` e consulte `docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml logs quick-tunnel` se a URL ainda não aparecer. O Quick Tunnel precisa permanecer ativo; se a URL mudar, atualize `API_TUNNEL_ORIGIN` e faça novo deploy.
 
 ## Segurança e limites atuais
 
 - Tokens de acesso e refresh são enviados por cookies HttpOnly; mantenha secrets e arquivos `.env*` fora do Git.
-- Nginx é a única porta pública do Compose padrão. No modo demo, somente a API é exposta pelo Funnel em loopback; o PostgreSQL permanece sem porta publicada.
+- Nginx é a única porta publicada pelo Compose padrão. Nos modos demo, somente a API fica alcançável pela Internet através do túnel; o PostgreSQL permanece sem porta publicada.
 - A colaboração usa revisão otimista, não edição simultânea em tempo real. Arquivamento preserva histórico; não há hard delete de requisito.
 - GitHub/Google, upload de anexos, convites por e-mail, sincronização bidirecional, webhooks, i18n e analytics avançado permanecem fora do MVP.

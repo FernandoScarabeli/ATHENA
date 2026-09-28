@@ -1,0 +1,15 @@
+# Netlify + Cloudflare Quick Tunnel demo overlay.
+# The API stays on the private Compose network; Cloudflare publishes only it.
+services:
+  api:
+    environment:
+      NODE_ENV: production
+      WEB_ORIGIN: ${NETLIFY_SITE_ORIGIN:?Defina NETLIFY_SITE_ORIGIN em .env.demo}
+      COOKIE_SECURE: "true"
+  quick-tunnel:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--url", "http://api:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

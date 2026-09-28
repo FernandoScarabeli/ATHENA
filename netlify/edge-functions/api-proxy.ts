@@ -4,13 +4,16 @@ const unavailable = (code: string, message: string, status: number) => new Respo
 });
 
 export default async function apiProxy(request: Request): Promise<Response> {
-  const configured = Netlify.env.get('TAILSCALE_FUNNEL_ORIGIN');
-  if (!configured) return unavailable('DEMO_PROXY_NOT_CONFIGURED', 'TAILSCALE_FUNNEL_ORIGIN não foi configurada.', 503);
+  // API_TUNNEL_ORIGIN supports Cloudflare Quick Tunnels and other tunnel
+  // providers. Keep the old name as a compatibility fallback for existing
+  // Tailscale Funnel deployments.
+  const configured = Netlify.env.get('API_TUNNEL_ORIGIN') || Netlify.env.get('TAILSCALE_FUNNEL_ORIGIN');
+  if (!configured) return unavailable('DEMO_PROXY_NOT_CONFIGURED', 'API_TUNNEL_ORIGIN não foi configurada.', 503);
 
   let origin: URL;
-  try { origin = new URL(configured); } catch { return unavailable('DEMO_PROXY_NOT_CONFIGURED', 'TAILSCALE_FUNNEL_ORIGIN é inválida.', 503); }
+  try { origin = new URL(configured); } catch { return unavailable('DEMO_PROXY_NOT_CONFIGURED', 'API_TUNNEL_ORIGIN é inválida.', 503); }
   if (origin.protocol !== 'https:' || origin.username || origin.password || (origin.pathname !== '/' && origin.pathname !== '')) {
-    return unavailable('DEMO_PROXY_NOT_CONFIGURED', 'TAILSCALE_FUNNEL_ORIGIN deve ser uma origem HTTPS sem caminho.', 503);
+    return unavailable('DEMO_PROXY_NOT_CONFIGURED', 'API_TUNNEL_ORIGIN deve ser uma origem HTTPS sem caminho.', 503);
   }
 
   const incoming = new URL(request.url);

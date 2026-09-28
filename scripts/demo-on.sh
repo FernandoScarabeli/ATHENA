@@ -7,12 +7,9 @@ athena_demo_load_env
 athena_demo_require docker
 athena_demo_require tailscale
 athena_demo_require curl
+athena_demo_validate_production_env
 
 case "$NETLIFY_SITE_ORIGIN" in https://*) ;; *) echo "NETLIFY_SITE_ORIGIN deve começar com https://" >&2; exit 1;; esac
-if [ "$JWT_ACCESS_SECRET" = "athena-local-access-secret-change-in-production" ] || [ "$JWT_REFRESH_SECRET" = "athena-local-refresh-secret-change-in-production" ]; then
-  echo "Use secrets JWT exclusivos no .env.demo; os defaults locais não são aceitos para a demonstração." >&2
-  exit 1
-fi
 
 echo "Iniciando API de demonstração em 127.0.0.1:${FUNNEL_API_PORT} (PostgreSQL permanece privado)..."
 athena_demo_compose up -d --build postgres api

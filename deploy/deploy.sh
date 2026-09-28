@@ -57,6 +57,18 @@ demo_status() {
   (cd "$DEPLOY_ROOT" && sh scripts/demo-status.sh)
 }
 
+cloudflare_demo_on() {
+  (cd "$DEPLOY_ROOT" && sh scripts/cloudflare-demo-on.sh)
+}
+
+cloudflare_demo_off() {
+  (cd "$DEPLOY_ROOT" && sh scripts/cloudflare-demo-off.sh)
+}
+
+cloudflare_demo_status() {
+  (cd "$DEPLOY_ROOT" && sh scripts/cloudflare-demo-status.sh)
+}
+
 restart_normal() {
   deploy_require docker
   deploy_compose restart
@@ -141,6 +153,9 @@ run_action() {
     demo-on) demo_on ;;
     demo-off) demo_off ;;
     demo-status) demo_status ;;
+    demo-cloudflare-on) cloudflare_demo_on ;;
+    demo-cloudflare-off) cloudflare_demo_off ;;
+    demo-cloudflare-status) cloudflare_demo_status ;;
     restart) restart_normal ;;
     stop) stop_normal ;;
     status) show_status ;;
@@ -169,7 +184,10 @@ menu() {
  10) Backup PostgreSQL
  11) Configurar senha do reset
  12) Restaurar backup
- 13) RESETAR BANCO (destrutivo)
+  13) RESETAR BANCO (destrutivo)
+ 14) Demo Cloudflare Quick Tunnel: ligar
+ 15) Demo Cloudflare Quick Tunnel: desligar
+ 16) Demo Cloudflare Quick Tunnel: status
   0) Sair
 EOF
     printf 'Escolha: '
@@ -188,6 +206,9 @@ EOF
       11) configure_reset_password ;;
       12) restore_database ;;
       13) reset_database ;;
+      14) cloudflare_demo_on ;;
+      15) cloudflare_demo_off ;;
+      16) cloudflare_demo_status ;;
       0) exit 0 ;;
       *) printf 'Opção inválida.\n' >&2 ;;
     esac
@@ -204,7 +225,7 @@ if [ "$#" -eq 0 ]; then
   menu
 else
   run_action "$1" || {
-    printf 'Uso: %s [dev|normal|demo-on|demo-off|demo-status|restart|stop|status|logs|backup|restore|password|reset-db]\n' "$0" >&2
+    printf 'Uso: %s [dev|normal|demo-on|demo-off|demo-status|demo-cloudflare-on|demo-cloudflare-off|demo-cloudflare-status|restart|stop|status|logs|backup|restore|password|reset-db]\n' "$0" >&2
     exit 64
   }
 fi
