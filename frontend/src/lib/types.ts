@@ -7,24 +7,25 @@ import type {
   RequirementStatus as SharedRequirementStatus,
   RequirementType as SharedRequirementType,
   WorkspaceRole as SharedWorkspaceRole,
-  AiSuggestionStatus as SharedAiSuggestionStatus,
-  AiSuggestionType as SharedAiSuggestionType,
+  ProjectRole as SharedProjectRole,
+  AccessRequestStatus as SharedAccessRequestStatus,
+  AccessScope as SharedAccessScope,
 } from '@athena/shared';
 
 export type RequirementType = SharedRequirementType;
 export type RequirementStatus = SharedRequirementStatus;
 export type RelationType = SharedRelationType;
 export type WorkspaceRole = SharedWorkspaceRole;
-export type AiSuggestionStatus = SharedAiSuggestionStatus;
-export type AiSuggestionType = SharedAiSuggestionType;
+export type ProjectRole = SharedProjectRole;
+export type AccessRequestStatus = SharedAccessRequestStatus;
+export type AccessScope = SharedAccessScope;
 export type ReferenceType = SharedReferenceType;
 export type { CommentAnchor, CommentThreadStatus, NotificationType };
 
 export interface User { id: string; name: string; email: string }
-export interface AuthSession { id: string; persistent: boolean; createdAt: string; expiresAt: string }
-export interface Workspace { id: string; name: string; role?: WorkspaceRole }
-export interface Project { id: string; name: string; key: string }
-export interface WorkspaceSummary extends Workspace { role: WorkspaceRole; projects: Project[] }
+export interface Workspace { id: string; name: string; role?: WorkspaceRole | null; archivedAt?: string | null }
+export interface Project { id: string; name: string; key: string; role?: WorkspaceRole | ProjectRole; archivedAt?: string | null }
+export interface WorkspaceSummary extends Workspace { role: WorkspaceRole | null; projects: Project[] }
 
 export interface AcceptanceCriterion {
   id?: string;
@@ -78,7 +79,7 @@ export interface RequirementDiff {
   criteriaAdded: string[];
   criteriaRemoved: string[];
 }
-export interface RequirementFolder { id: string; workspaceId: string; name: string; description?: string | null; parentId?: string | null; requirementCount?: number; }
+export interface RequirementFolder { id: string; workspaceId: string; projectId?: string | null; name: string; description?: string | null; parentId?: string | null; requirementCount?: number; }
 
 export interface RequirementTemplate {
   id: string;
@@ -89,6 +90,10 @@ export interface RequirementTemplate {
   acceptanceCriteria?: AcceptanceCriterion[];
   createdBy?: Pick<User, 'id' | 'name'>;
   updatedAt?: string;
+}
+
+export interface WorkspaceReviewChecklist {
+  items: string[];
 }
 
 export interface WorkspaceMember {
@@ -124,6 +129,21 @@ export interface Notification {
   readAt?: string | null;
   createdAt: string;
   commentMessage?: { author: Pick<User, 'id' | 'name'>; thread: { requirement: Pick<Requirement, 'id' | 'title' | 'projectId'> } } | null;
+  accessRequest?: AccessRequest | null;
+}
+
+export interface AccessRequest {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  status: AccessRequestStatus;
+  scope?: AccessScope | null;
+  role?: ProjectRole | null;
+  createdAt: string;
+  decidedAt?: string | null;
+  requester?: Pick<User, 'id' | 'name' | 'email'>;
+  project?: Pick<Project, 'id' | 'name' | 'key'>;
+  workspace?: Pick<Workspace, 'id' | 'name'>;
 }
 
 export interface GraphNode {
@@ -146,38 +166,6 @@ export interface RequirementRelation {
   target: Requirement;
 }
 
-export interface AiSuggestion {
-  id: string;
-  analysisId: string;
-  requirementId: string;
-  type: AiSuggestionType;
-  targetRequirementId?: string | null;
-  relationType?: RelationType | null;
-  referenceType?: ReferenceType | null;
-  url?: string | null;
-  confidence: number;
-  justification: string;
-  status: AiSuggestionStatus;
-  error?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-export type DependencyAnalysisStatus = 'QUEUED' | 'READING' | 'PERSISTING' | 'COMPLETED' | 'FAILED';
-export interface DependencySuggestion extends AiSuggestion {
-  requirement: Pick<Requirement, 'id' | 'code' | 'title'>;
-  targetRequirement: Pick<Requirement, 'id' | 'code' | 'title'>;
-}
-export interface DependencyAnalysis {
-  id: string;
-  status: DependencyAnalysisStatus;
-  totalRequirements: number;
-  processedRequirements: number;
-  suggestionsFound: number;
-  error?: string | null;
-  startedAt?: string | null;
-  completedAt?: string | null;
-  suggestions: DependencySuggestion[];
-}
 
 export type IntegrationCandidateStatus = 'PENDING' | 'ACCEPTED' | 'DISMISSED';
 export type IntegrationCandidateChangeType = 'CREATED' | 'UPDATED' | 'REMOVED';

@@ -1,19 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { aiSuggestionStatuses, aiSuggestionTypes, commentThreadStatuses, notificationTypes, requirementStatuses, workspaceRoles } from './index.js';
+import { commentThreadStatuses, notificationTypes, requirementStatuses, workspaceRoles } from './index.js';
 import type { ApiError, CommentAnchor, CreateCommentPayload, RequirementResponse } from './index.js';
 
 describe('shared transport contracts', () => {
   it('keeps the product vocabulary stable, including VIEWER commenting', () => {
-    expect(workspaceRoles).toEqual(['OWNER', 'EDITOR', 'VIEWER']);
+    expect(workspaceRoles).toEqual(['OWNER', 'MANAGER', 'EDITOR', 'VIEWER']);
     expect(requirementStatuses).toEqual(['DRAFT', 'ACTIVE', 'ARCHIVED']);
     expect(commentThreadStatuses).toEqual(['OPEN', 'RESOLVED']);
-    expect(notificationTypes).toEqual(['MENTION']);
+    expect(notificationTypes).toEqual(['MENTION', 'ACCESS_REQUEST', 'ACCESS_DECISION']);
   });
 
-  it('publishes AI suggestion state and kinds without making them canonical relations', () => {
-    expect(aiSuggestionTypes).toEqual(['RELATION', 'REFERENCE']);
-    expect(aiSuggestionStatuses).toEqual(['PENDING', 'CONFIRMED', 'DISMISSED']);
-  });
 
   it('models optional anchors and the documented error envelope', () => {
     const anchor: CommentAnchor = { from: 1, to: 4, quote: 'texto' };

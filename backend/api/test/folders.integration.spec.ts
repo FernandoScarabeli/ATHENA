@@ -12,8 +12,9 @@ describeIntegration('Folder management PostgreSQL integration', () => {
   let prisma: PrismaService;
   let service: RequirementsService;
   let workspaceId: string;
-  let sourceFolderId: string;
-  let fallbackFolderId: string;
+  let projectIds: string[] = [];
+  let sourceFolderIds: string[] = [];
+  let fallbackFolderIds: string[] = [];
   let userIds: string[] = [];
   let requirementIds: string[] = [];
 
@@ -30,14 +31,18 @@ describeIntegration('Folder management PostgreSQL integration', () => {
       folders: { create: [{ name: 'Sem pasta' }, { name: 'A organizar', description: 'Antes' }] },
     }, include: { folders: true } });
     workspaceId = workspace.id;
-    fallbackFolderId = workspace.folders.find(folder => folder.name === 'Sem pasta')!.id;
-    sourceFolderId = workspace.folders.find(folder => folder.name === 'A organizar')!.id;
-    const projects = await Promise.all([
-      prisma.project.create({ data: { workspaceId, name: 'Primeiro', key: `F${suffix.replace(/\D/g, '').slice(-5)}A` } }),
-      prisma.project.create({ data: { workspaceId, name: 'Segundo', key: `F${suffix.replace(/\D/g, '').slice(-5)}B` } }),
-    ]);
+    const projects = [
+      await service.createProject(users[0].id, workspaceId, 'Primeiro', `F${suffix.replace(/\D/g, '').slice(-5)}A`),
+      await service.createProject(users[0].id, workspaceId, 'Segundo', `F${suffix.replace(/\D/g, '').slice(-5)}B`),
+    ];
+    projectIds = projects.map(project => project.id);
+    for (const project of projects) {
+      const folders = await prisma.requirementFolder.findMany({ where: { projectId: project.id } });
+      sourceFolderIds.push(folders.find(folder => folder.name === 'A organizar')!.id);
+      fallbackFolderIds.push(folders.find(folder => folder.name === 'Sem pasta')!.id);
+    }
     for (const [index, project] of projects.entries()) {
-      const requirement = await service.create(users[0].id, project.id, { title: `US pasta ${index}`, folderId: sourceFolderId, content: { type: 'doc', content: [] } });
+      const requirement = await service.create(users[0].id, project.id, { title: `US pasta ${index}`, folderId: sourceFolderIds[index], content: { type: 'doc', content: [] } });
       requirementIds.push(requirement.id);
     }
     await service.archive(users[1].id, requirementIds[1]);
@@ -50,22 +55,24 @@ describeIntegration('Folder management PostgreSQL integration', () => {
     await prisma.$disconnect();
   });
 
-  it('enforces roles and atomically realocates active and archived US across projects', async () => {
-    await expect(service.updateFolder(userIds[2], sourceFolderId, { name: 'não pode' })).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(service.updateFolder(userIds[1], sourceFolderId, { name: '  Roadmap  ', description: 'Nova descrição' })).resolves.toMatchObject({ name: 'Roadmap', description: 'Nova descrição' });
-    await expect(service.createFolder(userIds[1], workspaceId, { name: 'roadmap' })).rejects.toThrow('Já existe');
-    await expect(service.updateFolder(userIds[0], fallbackFolderId, { name: 'Outra' })).rejects.toThrow('reservada');
-    await expect(service.deleteFolder(userIds[1], fallbackFolderId)).rejects.toThrow('não pode ser excluída');
-    await expect(service.deleteFolder(userIds[1], sourceFolderId)).resolves.toEqual({ ok: true });
-    await expect(prisma.requirement.findMany({ where: { id: { in: requirementIds }, folderId: fallbackFolderId }, select: { id: true, status: true } })).resolves.toEqual(expect.arrayContaining([{ id: requirementIds[0], status: 'DRAFT' }, { id: requirementIds[1], status: 'ARCHIVED' }]));
-    await expect(prisma.requirementFolder.findUnique({ where: { id: sourceFolderId } })).resolves.toBeNull();
+  it('enforces roles and isolates folder edits and deletes by project', async () => {
+    await expect(service.updateFolder(userIds[2], projectIds[0], sourceFolderIds[0], { name: 'não pode' })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.updateFolder(userIds[1], projectIds[0], sourceFolderIds[0], { name: '  Roadmap  ', description: 'Nova descrição' })).resolves.toMatchObject({ name: 'Roadmap', description: 'Nova descrição' });
+    await expect(service.createFolder(userIds[1], projectIds[0], { name: 'roadmap' })).rejects.toThrow('Já existe');
+    await expect(service.updateFolder(userIds[0], projectIds[0], fallbackFolderIds[0], { name: 'Outra' })).rejects.toThrow('reservada');
+    await expect(service.deleteFolder(userIds[1], projectIds[0], fallbackFolderIds[0])).rejects.toThrow('não pode ser excluída');
+    await expect(service.deleteFolder(userIds[1], projectIds[0], sourceFolderIds[0])).resolves.toEqual({ ok: true });
+    await expect(prisma.requirement.findMany({ where: { id: requirementIds[0], folderId: fallbackFolderIds[0] }, select: { id: true, status: true } })).resolves.toEqual([{ id: requirementIds[0], status: 'DRAFT' }]);
+    await expect(prisma.requirement.findUnique({ where: { id: requirementIds[1] }, select: { folderId: true, status: true } })).resolves.toMatchObject({ folderId: sourceFolderIds[1], status: 'ARCHIVED' });
+    await expect(prisma.requirementFolder.findUnique({ where: { id: sourceFolderIds[0] } })).resolves.toBeNull();
+    await expect(prisma.requirementFolder.findUnique({ where: { id: sourceFolderIds[1] } })).resolves.toMatchObject({ name: 'A organizar' });
   });
 
   it('enforces case-insensitive uniqueness when equivalent names race', async () => {
     const baseName = `Concurrent ${Date.now()}`;
     const results = await Promise.allSettled([
-      service.createFolder(userIds[0], workspaceId, { name: baseName }),
-      service.createFolder(userIds[0], workspaceId, { name: baseName.toLowerCase() }),
+      service.createFolder(userIds[0], projectIds[0], { name: baseName }),
+      service.createFolder(userIds[0], projectIds[0], { name: baseName.toLowerCase() }),
     ]);
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter(result => result.status === 'rejected')).toHaveLength(1);

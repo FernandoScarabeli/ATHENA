@@ -1,15 +1,41 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type WheelEvent } from 'react';
-import { applyNodeChanges, Background, ControlButton, Controls, MiniMap, ReactFlow, type Edge, type NodeChange, type ReactFlowInstance, type Viewport } from '@xyflow/react';
+import { applyNodeChanges, Background, BaseEdge, ControlButton, Controls, EdgeLabelRenderer, getSmoothStepPath, MiniMap, ReactFlow, type Edge, type EdgeProps, type NodeChange, type NodeProps, type ReactFlowInstance, type Viewport } from '@xyflow/react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import type { GraphResponse, Requirement, RequirementFolder } from '../../lib/types';
 import { Icon } from '../../components/Icon';
 import { FolderMapNode } from './FolderMapNode';
 import { RequirementNode } from './RequirementNode';
 import { resolveDraggedCollisions } from './requirementMapCollisions';
-import { buildDefaultStoryOrder, buildRequirementMap, reorderStoryIds, shouldUseMapPerformanceMode, storyOrderIndex, visibleMapEdges, type MapNode } from './requirementGraphLayout';
+import { buildDefaultStoryOrder, buildRequirementMap, reorderStoryIds, shouldUseMapPerformanceMode, storyOrderIndex, visibleMapEdges, type MapNode, type RelationLaneFlowNode } from './requirementGraphLayout';
 import { readMapPreferences, readMapViewport, writeMapPreferences, writeMapViewport } from './requirementMapPreferences';
 
-const nodeTypes = { folder: FolderMapNode, requirement: RequirementNode };
+const nodeTypes = { folder: FolderMapNode, requirement: RequirementNode, relationLane: RelationLaneHeadingNode };
+const edgeTypes = { relation: RelationEdge };
+
+function RelationEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, style, label, labelStyle, data }: EdgeProps) {
+  const offset = Number(data?.curveOffset ?? 0);
+  const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+  const controlX = (targetX - sourceX) * 0.32;
+  const path = offset === 0 ? smoothPath : `M ${sourceX} ${sourceY} C ${sourceX + controlX} ${sourceY + offset}, ${targetX - controlX} ${targetY + offset}, ${targetX} ${targetY}`;
+  const labelX = offset === 0 ? smoothLabelX : (sourceX + targetX) / 2;
+  const labelY = offset === 0 ? smoothLabelY : (sourceY + targetY) / 2 + offset * 0.75;
+  return <>
+    <BaseEdge path={path} markerEnd={markerEnd} style={style}/>
+    {label ? <EdgeLabelRenderer>
+      <div className="requirement-relation-edge-label" style={{
+        position: 'absolute',
+        transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+        pointerEvents: 'none',
+        zIndex: 1000,
+        color: labelStyle?.fill as string | undefined,
+      }}>{label}</div>
+    </EdgeLabelRenderer> : null}
+  </>;
+}
+
+function RelationLaneHeadingNode({ data }: NodeProps<RelationLaneFlowNode>) {
+  return <div className="relation-lane-heading" role="note">{data.label}</div>;
+}
 
 function sameNodeRecord(current: Record<string, unknown>, next: Record<string, unknown>): boolean {
   const keys = Object.keys(current);
@@ -69,6 +95,21 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (rootId || !selectedId) return;
+    const selectedFolderId = requirements.find((requirement) => requirement.id === selectedId)?.folderId;
+    if (!selectedFolderId) return;
+    const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      let folderId: string | undefined = selectedFolderId;
+      while (folderId && foldersById.has(folderId)) {
+        next.delete(folderId);
+        folderId = foldersById.get(folderId)?.parentId ?? undefined;
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, [rootId, selectedId, requirements, folders]);
   const defaultStoryOrder = useMemo(() => {
     if (rootId) return {};
     const visibleIds = new Set(data.nodes.map((node) => node.id));
@@ -97,7 +138,8 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
         return positionA.y - positionB.y || positionA.x - positionB.x;
       })
       .map((node) => node.id);
-    commitStoryOrder(folderId, reorderStoryIds(currentOrder, id, storyOrderIndex(position)));
+    const folder = nodesRef.current.find((node) => node.type === 'folder' && node.id === folderId);
+    commitStoryOrder(folderId, reorderStoryIds(currentOrder, id, storyOrderIndex(position, folder?.data.highlighted ? 40 : 16)));
   }, [commitStoryOrder]);
   const computedNodes = useMemo(() => buildRequirementMap(data, folders, requirements, query, rootId, selectedId, collapsedFolderIds, storyOrderByFolder, toggleFolder), [data, folders, requirements, query, rootId, selectedId, collapsedFolderIds, storyOrderByFolder, toggleFolder]);
   const positionedNodes = useMemo(() => computedNodes.map((node) => node.type === 'folder' && folderPositions[node.id] ? { ...node, position: folderPositions[node.id] } : node), [computedNodes, folderPositions]);
@@ -112,8 +154,50 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
     : computedNodes.some((node) => node.type === 'folder' && folderPositions[node.id] && (folderPositions[node.id].x !== node.position.x || folderPositions[node.id].y !== node.position.y));
   const hasCustomLayout = collapsedFolderIds.size > 0 || hasCustomFolderPosition || hasCustomStoryOrder;
   const [instance, setInstance] = useState<ReactFlowInstance<MapNode, Edge> | null>(null);
-  const edges = useMemo(() => visibleMapEdges(data, computedNodes, selectedId), [data, computedNodes, selectedId]);
+  const selectedFolderId = !rootId && selectedId ? requirements.find((requirement) => requirement.id === selectedId)?.folderId : undefined;
+  const selectedFolderVisible = nodes.some((node) => node.type === 'folder' && node.id === selectedFolderId);
+  useEffect(() => {
+    if (!instance || !selectedFolderId || !selectedFolderVisible) return;
+    const timer = window.setTimeout(() => {
+      const currentNodes = nodesRef.current;
+      const folder = currentNodes.find((node) => node.type === 'folder' && node.id === selectedFolderId);
+      const container = flowContainerRef.current;
+      if (!folder || !container) return;
+
+      const nodesById = new Map(currentNodes.map((node) => [node.id, node]));
+      const absolutePosition = (node: MapNode, visited = new Set<string>()): { x: number; y: number } => {
+        if (!node.parentId || visited.has(node.id)) return node.position;
+        const parent = nodesById.get(node.parentId);
+        if (!parent) return node.position;
+        visited.add(node.id);
+        const parentPosition = absolutePosition(parent, visited);
+        return { x: parentPosition.x + node.position.x, y: parentPosition.y + node.position.y };
+      };
+
+      const containerRect = container.getBoundingClientRect();
+      const detailsPanel = document.querySelector<HTMLElement>('.details-panel:not(.drawer-exiting)');
+      const panelLeft = detailsPanel?.getBoundingClientRect().left ?? containerRect.right;
+      const visibleRight = Math.min(containerRect.right, panelLeft);
+      const visibleWidth = Math.max(1, visibleRight - containerRect.left);
+      const availableHeight = Math.max(1, containerRect.height - 96);
+      const width = Number(folder.style?.width) || folder.width || 1;
+      const height = Number(folder.style?.height) || folder.height || 1;
+      const zoom = Math.max(0.25, Math.min(1.6, visibleWidth / (width * 0.95), availableHeight / (height * 0.95)));
+      const position = absolutePosition(folder);
+      const centerX = visibleWidth / 2;
+      const centerY = containerRect.height / 2;
+
+      void instance.setViewport({
+        x: centerX - (position.x + width / 2) * zoom,
+        y: centerY - (position.y + height / 2) * zoom,
+        zoom,
+      }, { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 420 });
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 240);
+    return () => window.clearTimeout(timer);
+  }, [instance, selectedFolderId, selectedFolderVisible, selectedId]);
+  const edges = useMemo(() => visibleMapEdges(data, computedNodes, selectedId, rootId), [data, computedNodes, selectedId, rootId]);
   const storyCount = computedNodes.reduce((count, node) => count + Number(node.type === 'requirement'), 0);
+  const hasLegacyRelations = computedNodes.some((node) => node.type === 'requirement' && (node.data.focusRelation?.total ?? 0) > 1);
   const performanceMode = shouldUseMapPerformanceMode(storyCount, edges.length);
   const motionDuration = useCallback((duration: number) => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : duration, []);
   const handleNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
@@ -131,7 +215,7 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
     lastDraggedPositionRef.current = dragChange.position;
     setNodes((current) => resolveDraggedCollisions(applyNodeChanges(changes, current), dragChange.id, direction));
   }, []);
-  const handleNodeClick = useCallback((_: React.MouseEvent, node: MapNode) => { if (node.type === 'requirement') onSelect(node.id); }, [onSelect]);
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: MapNode) => { if (node.type === 'requirement') onSelect(node.data.requirementId ?? node.id); }, [onSelect]);
   const handleNodeDragStart = useCallback((_: MouseEvent | TouchEvent, node: MapNode) => {
     draggedNodeIdRef.current = node.id;
     lastDraggedPositionRef.current = node.position;
@@ -158,7 +242,8 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
   }, [rootId, reorderStory]);
   const miniMapNodeColor = useCallback((node: MapNode) => node.type === 'folder'
     ? (darkMode ? '#526575' : '#dfe5e8')
-    : node.data.relationState === 'selected' ? '#c76a27' : node.data.relationState === 'related' ? '#668ca1' : (darkMode ? '#526575' : '#c8cdd3'), [darkMode]);
+    : node.type === 'relationLane' ? 'transparent'
+      : node.data.relationState === 'selected' ? '#c76a27' : node.data.relationState === 'related' ? '#668ca1' : (darkMode ? '#526575' : '#c8cdd3'), [darkMode]);
   const handleInit = useCallback((flow: ReactFlowInstance<MapNode, Edge>) => {
     flowInstanceRef.current = flow;
     viewportRef.current = flow.getViewport();
@@ -269,6 +354,7 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onInit={handleInit}
         onMove={handleMove}
         onMoveEnd={handleMoveEnd}
@@ -285,7 +371,7 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
         nodesConnectable={false}
         nodesDraggable
         elementsSelectable={false}
-        aria-label="Mapa de User Stories agrupadas por pasta e suas relações"
+        aria-label={rootId ? 'Mapa das relações diretas da US atual' : 'Mapa de User Stories agrupadas por pasta e suas relações'}
       >
         <Background color={darkMode ? '#34414c' : '#d8dce1'} gap={20} size={1}/>
         <Controls position="bottom-left" showZoom={false} showFitView={false} showInteractive={false}>
@@ -295,6 +381,7 @@ export function RequirementGraph({ projectId, data, folders, requirements, query
         </Controls>
         {!performanceMode && <MiniMap position="bottom-right" pannable zoomable bgColor={darkMode ? '#1c252e' : '#fff'} nodeColor={miniMapNodeColor} maskColor={darkMode ? 'rgba(17,23,29,.72)' : 'rgba(247,248,250,.72)'}/>}
       </ReactFlow>
+      {hasLegacyRelations && <div className="graph-legacy-notice" role="note">Uma US repetida representa relações antigas diferentes com a US atual.</div>}
       {!hasRequirements && <div className="graph-empty-hint" role="status">As pastas estão prontas para receber User Stories.</div>}
       {!rootId && hasCustomLayout && <button className="graph-reset-button" type="button" onClick={() => { setCollapsedFolderIds(new Set()); setFolderPositions({}); setStoryOrderByFolder({}); setNodes(computedNodes); window.setTimeout(() => instance?.fitView({ padding: 0.2, duration: motionDuration(220), maxZoom: 1 }), 20); }}><Icon name="refresh" size={13}/> Restaurar layout</button>}
     </div>

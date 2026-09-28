@@ -8,7 +8,7 @@ services:
     environment:
       NODE_ENV: development
       WATCHPACK_POLLING: "true"
-    command: ["sh", "backend/api/scripts/bootstrap-db.sh", "corepack", "pnpm", "--filter", "@athena/api", "dev"]
+    command: ["corepack", "pnpm", "--filter", "@athena/api", "dev"]
     volumes:
       - ./backend/api:/app/backend/api
       - ./packages/shared:/app/packages/shared

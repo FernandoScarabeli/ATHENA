@@ -24,4 +24,15 @@ describe('GithubAdapter', () => {
     expect(error).toMatchObject({ code });
     expect(error.message).not.toContain('super-secret-pat');
   });
+
+  it('creates an issue using the selected repository and resolves its remote metadata', async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(response(201, { id: 51, node_id: 'I_51', number: 8, title: 'Task', state: 'open', html_url: 'https://github.com/acme/app/issues/8' }))
+      .mockResolvedValueOnce(response(200, { id: 51, node_id: 'I_51', number: 8, title: 'Task', state: 'open', html_url: 'https://github.com/acme/app/issues/8' }));
+    const adapter = new GithubAdapter(request);
+    await expect(adapter.createIssue('secret-token', 'acme', 'app', 'Task', 'Body')).resolves.toMatchObject({ number: 8, nodeId: 'I_51' });
+    await expect(adapter.getIssue('secret-token', 'acme', 'app', 8)).resolves.toMatchObject({ number: 8, title: 'Task' });
+    expect(request.mock.calls[0][0]).toContain('/repos/acme/app/issues');
+    expect(JSON.parse(request.mock.calls[0][1].body)).toEqual({ title: 'Task', body: 'Body' });
+  });
 });

@@ -27,6 +27,8 @@ beforeEach(() => {
     if (path === '/workspaces') return [{ id: 'w1', projects: [{ id: 'p1', key: 'ATH', name: 'Projeto Athena' }] }] as never;
     if (path === '/workspaces/w1/integrations/google/folder-links') return [{ id: 'link-1', externalId: 'already-linked' }] as never;
     if (path === '/workspaces/w1/integrations/google/folders') return { files: folders } as never;
+    if (path === '/projects/p1/integrations/google/export-preview') return { project: { id: 'p1', name: 'Projeto Athena', key: 'ATH' }, root: null, eligibleCount: 0 } as never;
+    if (path === '/projects/p1/integrations/google/export-status') return { root: null, operations: [] } as never;
     throw new Error(`Rota não esperada: ${path}`);
   });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);

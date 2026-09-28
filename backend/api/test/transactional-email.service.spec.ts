@@ -26,6 +26,7 @@ describe("TransactionalEmailService", () => {
   it("sends a verification URL, plain-text fallback, and stable idempotency key", async () => {
     const { instance, send } = service();
     await instance.sendVerification("person@example.com", "raw-token");
+    const payload = send.mock.calls[0][0];
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         from: "ATHENA <access@athena.test>",
@@ -37,6 +38,9 @@ describe("TransactionalEmailService", () => {
       }),
       { idempotencyKey: `email-verification/${tokenDigest("raw-token")}` },
     );
+    expect(payload.html).toContain("Confirme seu e-mail</h1>");
+    expect(payload.html).toContain(">Confirmar e-mail</a>");
+    expect(payload.html).toContain("Se o botão não funcionar");
   });
 
   it("escapes a workspace name before interpolation into invitation HTML", async () => {
@@ -55,6 +59,21 @@ describe("TransactionalEmailService", () => {
     });
   });
 
+  it("emails a six-digit recovery code without putting it in a link", async () => {
+    const { instance, send } = service();
+    await instance.sendPasswordResetCode("person@example.com", "001234", "reset-1");
+    const payload = send.mock.calls[0][0];
+    expect(payload.subject).toBe("Seu código para redefinir a senha no ATHENA");
+    expect(payload.html).toContain("001234");
+    expect(payload.html).toContain("10 minutos");
+    expect(payload.html).not.toContain("<a href=");
+    expect(payload.text).toContain("Código: 001234");
+    expect(payload.text).not.toContain("https://app.athena.test");
+    expect(send.mock.calls[0][1]).toEqual({
+      idempotencyKey: `password-reset-code/${tokenDigest("reset-1")}`,
+    });
+  });
+
   it("returns a recoverable error when Resend rejects a synchronous send", async () => {
     const { instance } = service(
       jest
@@ -63,7 +82,7 @@ describe("TransactionalEmailService", () => {
     );
 
     await expect(
-      instance.sendPasswordReset("person@example.com", "reset-token"),
+      instance.sendPasswordResetCode("person@example.com", "123456", "reset-1"),
     ).rejects.toThrow("Não foi possível enviar o e-mail agora");
   });
 });

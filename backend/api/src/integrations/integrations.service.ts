@@ -4,14 +4,13 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../core/prisma.service';
 import { IntegrationCrypto } from './crypto.service';
 import { validTipTap } from '../requirements/dto';
-import { AiAnalysisJobService } from '../ai/ai-analysis-job.service';
 
-const readRoles = [WorkspaceRole.OWNER, WorkspaceRole.EDITOR, WorkspaceRole.VIEWER];
+const readRoles = [WorkspaceRole.OWNER, WorkspaceRole.MANAGER, WorkspaceRole.EDITOR, WorkspaceRole.VIEWER];
 
 @Injectable()
 export class IntegrationsService {
   private readonly logger = new Logger(IntegrationsService.name);
-  constructor(private readonly prisma: PrismaService, private readonly crypto: IntegrationCrypto, private readonly aiJobs?: AiAnalysisJobService) {}
+  constructor(private readonly prisma: PrismaService, private readonly crypto: IntegrationCrypto) {}
 
   private event(event: string, fields: Record<string, string | number | boolean | undefined>) {
     // Only stable identifiers/status/codes are logged. Credentials and source content never enter this payload.
@@ -20,17 +19,23 @@ export class IntegrationsService {
   }
 
   private async member(userId: string, workspaceId: string, roles = readRoles) {
-    const member = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
+    const member = await this.prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } }, include: { workspace: { select: { archivedAt: true } } } });
     if (!member || !roles.includes(member.role)) throw new ForbiddenException('Você não tem permissão para esta ação');
+    if (member.workspace?.archivedAt) throw new NotFoundException('Este workspace está arquivado');
     return member;
   }
 
   private validateCredentials(kind: IntegrationKind, credentials: Record<string, string>) {
-    if (![IntegrationKind.GITHUB, IntegrationKind.GOOGLE].includes(kind)) throw new BadRequestException('Provider de integração inválido');
+    if (![IntegrationKind.GITHUB, IntegrationKind.GOOGLE, IntegrationKind.OPENPROJECT].includes(kind)) throw new BadRequestException('Provider de integração inválido');
     if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) throw new BadRequestException('Credenciais inválidas');
-    const secret = kind === IntegrationKind.GITHUB ? credentials.token : credentials.accessToken;
+    const secret = kind === IntegrationKind.GITHUB ? credentials.token : kind === IntegrationKind.OPENPROJECT ? credentials.apiToken : credentials.accessToken;
     if (typeof secret !== 'string' || secret.trim().length < 8) throw new BadRequestException('Credencial inválida para o provider');
     if (Object.keys(credentials).some(key => typeof credentials[key] !== 'string')) throw new BadRequestException('Credenciais inválidas');
+    if (kind === IntegrationKind.OPENPROJECT) {
+      let instanceUrl: URL;
+      try { instanceUrl = new URL(credentials.instanceUrl); } catch { throw new BadRequestException('URL do OpenProject inválida'); }
+      if (instanceUrl.protocol !== 'https:' || instanceUrl.username || instanceUrl.password || instanceUrl.search || instanceUrl.hash) throw new BadRequestException('Informe a URL HTTPS base da instância OpenProject');
+    }
   }
 
   private metadata(connection: any) {
@@ -47,6 +52,18 @@ export class IntegrationsService {
     await this.member(userId, workspaceId, [WorkspaceRole.OWNER]);
     this.validateCredentials(kind, credentials);
     const encryptedCredentials = this.crypto.encrypt(JSON.stringify(credentials));
+    if (kind === IntegrationKind.GITHUB || kind === IntegrationKind.OPENPROJECT) {
+      const existing = await this.prisma.integrationConnection.findUnique({ where: { workspaceId_kind: { workspaceId, kind } } });
+      let sameCredentials = false;
+      if (existing?.status === IntegrationStatus.CONNECTED && existing.encryptedCredentials) {
+        try {
+          const previous = JSON.parse(this.crypto.decrypt(existing.encryptedCredentials)) as Record<string, string>;
+          const canonical = (value: Record<string, string>) => JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))));
+          sameCredentials = canonical(previous) === canonical(credentials);
+        } catch { sameCredentials = false; }
+      }
+      if (existing && !sameCredentials && this.prisma.integrationProjectMapping?.deleteMany) await this.prisma.integrationProjectMapping.deleteMany({ where: { connectionId: existing.id } });
+    }
     try {
       const row = await this.prisma.integrationConnection.upsert({
         where: { workspaceId_kind: { workspaceId, kind } },
@@ -63,7 +80,7 @@ export class IntegrationsService {
 
   async disconnect(userId: string, workspaceId: string, kind: IntegrationKind) {
     await this.member(userId, workspaceId, [WorkspaceRole.OWNER]);
-    if (![IntegrationKind.GITHUB, IntegrationKind.GOOGLE].includes(kind)) throw new BadRequestException('Provider de integração inválido');
+    if (![IntegrationKind.GITHUB, IntegrationKind.GOOGLE, IntegrationKind.OPENPROJECT].includes(kind)) throw new BadRequestException('Provider de integração inválido');
     const current = await this.prisma.integrationConnection.findUnique({ where: { workspaceId_kind: { workspaceId, kind } } });
     if (!current) throw new NotFoundException('Conexão não encontrada');
     // Do not delete the logical connection: source/candidate history remains available.
@@ -202,18 +219,14 @@ export class IntegrationsService {
         return requirement;
       }
       const folder = input.folderId
-        ? await tx.requirementFolder.findFirst({ where: { id: input.folderId, workspaceId: row.connection.workspaceId } })
-        : await tx.requirementFolder.findFirst({ where: { workspaceId: row.connection.workspaceId }, orderBy: { createdAt: 'asc' } });
-      if (!folder) throw new NotFoundException('Pasta não encontrada neste workspace');
+        ? await tx.requirementFolder.findFirst({ where: { id: input.folderId, projectId: project.id } })
+        : await tx.requirementFolder.findFirst({ where: { projectId: project.id, name: { equals: 'Sem pasta', mode: 'insensitive' }, parentId: null } });
+      if (!folder) throw new NotFoundException('Pasta não encontrada neste projeto');
       const sequence = await tx.project.update({ where: { id: project.id }, data: { requirementSequence: { increment: 1 } }, select: { requirementSequence: true } });
       const requirement = await tx.requirement.create({ data: { projectId: project.id, code: `US-${String(sequence.requirementSequence).padStart(3, '0')}`, type: RequirementType.USER_STORY, status: RequirementStatus.ACTIVE, title: row.title, content, folderId: folder.id, source: `INTEGRATION:${row.connection.kind}` } });
       await tx.integrationCandidate.update({ where: { id }, data: { status: IntegrationCandidateStatus.ACCEPTED, reviewedAt: new Date() } });
       return requirement;
     }, { isolationLevel: 'Serializable' });
-    // Start only after commit, so the reader never sees an uncommitted import.
-    // An update of an already linked US also changes project context and is a
-    // specified trigger for a new global pass.
-    void this.aiJobs?.start(result.projectId);
     this.event('candidate_approved', { candidateId: id, projectId: input.projectId });
     return result;
   }

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "sh scripts/bootstrap-db.sh nest start --watch",
     "build": "nest build",
     "start": "node .athena-build/main",
     "test": "jest --runInBand",

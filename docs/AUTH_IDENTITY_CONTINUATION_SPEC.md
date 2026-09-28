@@ -18,7 +18,7 @@ Não alterar os arquivos já modificados para Google Drive, requisitos e compone
 - Somente e-mail confirmado permite autenticação e acesso a workspaces.
 - Após confirmação sem convite, direcionar para o onboarding já existente de seleção/criação de workspace e projeto.
 - Após aceitar convite, entrar no workspace que concedeu acesso.
-- A conta usa nome completo, e-mail normalizado e senha de ao menos 12 caracteres. Senha comprometida é bloqueada via consulta k-anônima ao Pwned Passwords API; indisponibilidade desse serviço falha fechada com mensagem recuperável.
+- A conta usa nome completo, e-mail normalizado e senha com ao menos 8 caracteres, incluindo letra, número e caractere especial. A mesma regra vale para redefinição de senha.
 - Aceite de Termos e Política de Privacidade é obrigatório. Os textos ficam fora do produto, em URLs configuráveis, e devem ter a versão registrada no banco.
 - E-mails transacionais usam **Resend**, SDK oficial `resend`, `RESEND_API_KEY` e remetente/dominio configurado em `RESEND_FROM`.
 - Access token dura 15 minutos. Refresh token é rotacionado e preso a uma sessão persistida: 30 dias com “Lembrar este dispositivo”; cookie de sessão, sem `maxAge`, quando desmarcado.
@@ -59,7 +59,7 @@ Manter `AuthModule` como dono do ciclo de identidade. Extrair serviços pequenos
 
 - `AuthService`: registro, login, confirmação, refresh, logout, recuperação, redefinição, sessão atual e sessões do usuário.
 - `TransactionalEmailService`: única integração com Resend. Recebe comandos sem token em logs (`sendVerification`, `sendPasswordReset`, `sendWorkspaceInvite`) e produz HTML + texto simples. Não permita que controllers chamem `Resend` diretamente.
-- `PasswordPolicyService`: mínimo de 12, validação k-anônima e timeout. Em testes, usar uma dependência mockável; nunca chamar a internet durante testes unitários.
+- `PasswordPolicyService`: valida localmente o mínimo de 8 caracteres, letra, número e caractere especial.
 - `AuthRateLimitService`: limite progressivo por ação, e-mail normalizado e IP/origem. Definir explicitamente janelas/limiares e respostas. Preferir registrar falha, não senha nem token.
 - `InviteService`: autoridade exclusiva para o ciclo de convites, com verificações de membership dentro de transações.
 
@@ -162,7 +162,7 @@ Não adicionar React Router apenas por conveniência sem avaliar o custo. O app 
 ## 6. Plano de execução obrigatório
 
 1. **Estabilizar a base:** reformatar auth, validar schema e aplicar migration em banco de teste novo. Resolver arquivos gerados/permissões de `backend/api/dist` sem apagar trabalho do usuário; se necessário, usar uma saída de build diferente ou ajustar propriedade com autorização explícita.
-2. **Cobrir o que já existe com testes antes de ampliar:** mock de Prisma, Resend e política de senha; testes controller para cookies e corpo. Garantir que o ambiente de teste não chama Pwned Passwords/Resend.
+2. **Cobrir o que já existe com testes antes de ampliar:** mock de Prisma e Resend; testes controller para cookies e corpo. Garantir que o ambiente de teste não chama serviços externos.
 3. **Corrigir segurança de sessão:** guard consulta sessão; refresh atômico; validar logout, expiração, reuso e reset.
 4. **Finalizar e-mails e configuração:** validação de env por ambiente, templates, escape HTML, idempotência, falhas de Resend e documentação de como validar domínio/remetente.
 5. **Implementar convites ponta a ponta:** serviço, rotas, autorização OWNER, transações, e-mails, UI de membros, tela pública de aceite e testes.
@@ -174,7 +174,7 @@ Não adicionar React Router apenas por conveniência sem avaliar o custo. O app 
 
 ### Unitários
 
-- Normalização do e-mail; senha curta; senha vazada; indisponibilidade HIBP.
+- Normalização do e-mail; senha curta; senha sem letra, número ou caractere especial.
 - `TransactionalEmailService`: destinatário, assunto, texto, HTML escapado, URL absoluta e `idempotencyKey` de confirmação/reset/convite; erro Resend.
 - Registro: aceite obrigatório, e-mail existente sem enumeração, token hasheado, aceite com versões e nenhuma sessão.
 - Verificação: sucesso, expirado, usado, reenvio invalida anterior.

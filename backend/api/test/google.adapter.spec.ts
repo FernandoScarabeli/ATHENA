@@ -42,4 +42,18 @@ describe('GoogleAdapter', () => {
     expect(url.searchParams.get('includeItemsFromAllDrives')).toBe('true');
     expect(url.searchParams.get('supportsAllDrives')).toBe('true');
   });
+  it('creates a Google Doc directly in its parent with a private retry marker', async () => {
+    const request = jest.fn().mockResolvedValue(response({ id: 'doc-1', name: 'Nova US' }));
+    const adapter = new GoogleAdapter(request);
+
+    await expect(adapter.createDocument('access', 'Nova US', 'folder-1', { athenaRequirementLinkId: 'link-1:req-1' }))
+      .resolves.toEqual({ documentId: 'doc-1', title: 'Nova US' });
+    const url = new URL(request.mock.calls[0][0]);
+    expect(url.pathname.endsWith('/drive/v3/files')).toBe(true);
+    expect(url.searchParams.get('supportsAllDrives')).toBe('true');
+    expect(JSON.parse(request.mock.calls[0][1].body)).toMatchObject({
+      name: 'Nova US', mimeType: 'application/vnd.google-apps.document', parents: ['folder-1'],
+      appProperties: { athenaRequirementLinkId: 'link-1:req-1' },
+    });
+  });
 });

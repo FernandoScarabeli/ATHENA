@@ -15,7 +15,7 @@ let client: QueryClient;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.mocked(api).mockImplementation(async path => {
-    if (path === '/workspaces/w1/folders') return [{ id: 'folder-1', workspaceId: 'w1', name: 'Produto' }] as never;
+    if (path === '/projects/p1/folders') return [{ id: 'folder-1', workspaceId: 'w1', projectId: 'p1', name: 'Produto' }] as never;
     if (path === '/workspaces/w1/templates') return [{ id: 'template-1', name: 'Fluxo', content: { type: 'doc', content: [] }, acceptanceCriteria: [{ title: 'Acesso', when: 'envia', then: 'entra', text: 'entra', position: 0 }] }] as never;
     return [] as never;
   });
@@ -26,7 +26,7 @@ afterEach(() => { act(() => root.unmount()); client.clear(); host.remove(); vi.u
 
 it('usa o snapshot canônico do backend para template persistido', async () => {
   const onCreate = vi.fn();
-  await act(async () => root.render(<QueryClientProvider client={client}><NewRequirementModal workspaceId="w1" pending={false} onClose={vi.fn()} onCreate={onCreate}/></QueryClientProvider>));
+  await act(async () => root.render(<QueryClientProvider client={client}><NewRequirementModal projectId="p1" workspaceId="w1" pending={false} onClose={vi.fn()} onCreate={onCreate}/></QueryClientProvider>));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   const title = host.querySelector<HTMLInputElement>('input[placeholder="Descreva a User Story"]')!;
   await act(async () => {

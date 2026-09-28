@@ -5,12 +5,13 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as argon2 from "argon2";
-import { randomUUID } from "crypto";
+import { randomInt, randomUUID, timingSafeEqual } from "crypto";
 import { PrismaService } from "../core/prisma.service";
 import { AuthRateLimitService } from "./auth-rate-limit.service";
 import {
   createToken,
   normalizeEmail,
+  resetCodeDigest,
   safeReturnTo,
   tokenDigest,
 } from "./auth.utils";
@@ -149,9 +150,7 @@ export class AuthService {
       !user.verifiedAt ||
       !(await argon2.verify(user.passwordHash, password))
     )
-      throw new UnauthorizedException(
-        "Não foi possível entrar com estes dados.",
-      );
+      throw new UnauthorizedException("Credenciais inválidas.");
     return { id: user.id, email: user.email, name: user.name };
   }
 
@@ -235,19 +234,79 @@ export class AuthService {
       select: { id: true, email: true, verifiedAt: true },
     });
     if (!user?.verifiedAt) return;
-    const token = createToken();
-    await this.prisma.passwordResetToken.updateMany({
-      where: { userId: user.id, usedAt: null },
-      data: { usedAt: new Date() },
-    });
+    const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const resetId = randomUUID();
+    const now = new Date();
     await this.prisma.passwordResetToken.create({
       data: {
+        id: resetId,
         userId: user.id,
-        tokenHash: tokenDigest(token),
-        expiresAt: new Date(Date.now() + 60 * 60_000),
+        tokenHash: resetCodeDigest(resetId, user.id, code),
+        expiresAt: new Date(now.getTime() + 10 * 60_000),
+        createdAt: now,
       },
     });
-    await this.mail.sendPasswordReset(user.email, token);
+    await this.mail.sendPasswordResetCode(user.email, code, resetId);
+  }
+  async resetWithCode(
+    email: string,
+    code: string,
+    password: string,
+    origin: string,
+  ) {
+    const normalized = normalizeEmail(email);
+    await this.rateLimit.check(normalized, origin, "reset-password-code");
+    const invalidCode = new BadRequestException("Código inválido ou expirado.");
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalized },
+      select: { id: true },
+    });
+    if (!user) throw invalidCode;
+
+    const now = new Date();
+    const reset = await this.prisma.passwordResetToken.findFirst({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!reset) throw invalidCode;
+
+    const expectedHash = resetCodeDigest(reset.id, user.id, code);
+    const expected = Buffer.from(expectedHash, "hex");
+    const stored = Buffer.from(reset.tokenHash, "hex");
+    if (stored.length !== expected.length || !timingSafeEqual(stored, expected))
+      throw invalidCode;
+
+    await this.passwords.validate(password);
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.passwordResetToken.updateMany({
+        where: {
+          id: reset.id,
+          userId: user.id,
+          tokenHash: expectedHash,
+          usedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { usedAt: now },
+      });
+      if (!consumed.count) throw invalidCode;
+      await tx.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: now },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      });
+      await tx.authSession.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+    });
   }
   async reset(rawToken: string, password: string) {
     await this.passwords.validate(password);
@@ -273,6 +332,10 @@ export class AuthService {
         throw new BadRequestException(
           "Este link de redefinição é inválido ou expirou.",
         );
+      await tx.passwordResetToken.updateMany({
+        where: { userId: token.userId, usedAt: null },
+        data: { usedAt: now },
+      });
       await tx.user.update({
         where: { id: token.userId },
         data: { passwordHash },

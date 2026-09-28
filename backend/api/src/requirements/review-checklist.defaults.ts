@@ -1,0 +1,17 @@
+export const DEFAULT_REVIEW_CHECKLIST = [
+  'Verificar todos os códigos das histórias, inclusive aqueles citados dentro de outras histórias. DICA: Procurar por US0XX para alterar.',
+  'Verificar os links e códigos das histórias citadas no texto',
+  'Confira se os anexos fazem sentido para a história em questão',
+  'Não repetir links para evitar erros.',
+  'Verifique se o nome da ação no critério de aceitação está consistente com o que aparece na tabela de ações de uma tela.',
+  'Verifique se as VALIDAÇÕES dos campos da HU de cadastro estão alinhados com as VALIDAÇÕES dos filtros da HU de busca.',
+  'Verificar se os tamanhos dos campos são consistentes, por exemplo, observação sempre tem 1500 caracteres.',
+  'Verificar se todas as ações fazem sentido para as telas correspondentes. Por exemplo, a ação "Editar" deve aparecer na tela "Visualizar".',
+  'Colocar o link para o arquivo com Req. Não Funcionais e Técnicos em todas as histórias',
+  'Verificar se os campos de "código" das tabelas de busca estão como não ordenáveis',
+  'Verificar se os critérios de aceitação estão no seguinte padrão: "QUANDO realizo a ação \"Adicionar\""',
+  'Verificar se os protótipos adicionados estão corretos',
+  'Todas as histórias de busca, geralmente, têm os mesmos critérios de aceitação comuns. Verificar se todas estão assim.',
+  'Em todos os exemplos utilizados nas histórias, verificar se são exemplos realísticos: códigos, nomes de entidades, cidades, etc.',
+  'Adicionar um comentário do tipo cliente (C) em todas as histórias de gerenciar, na parte em que falamos de edição. Nesse comentário, colocar os campos do SIDAGRO antigo que não são editáveis.',
+] as const;

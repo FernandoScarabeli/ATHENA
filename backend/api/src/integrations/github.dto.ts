@@ -1,6 +1,10 @@
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
+export class GithubConnectDto {
+  @IsString() @MinLength(8) @MaxLength(500) token!: string;
+}
+
 export class GithubSourceSelectionDto {
   @IsString() @MinLength(1) @MaxLength(100) owner!: string;
   @IsString() @MinLength(1) @MaxLength(100) repository!: string;

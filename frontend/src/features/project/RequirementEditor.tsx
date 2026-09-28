@@ -14,20 +14,22 @@ import TableCell from '@tiptap/extension-table-cell';
 import TextStyle from '@tiptap/extension-text-style';
 import { Icon } from '../../components/Icon';
 import { api, ApiError } from '../../lib/api';
-import type { AcceptanceCriterion, CommentThread, Requirement, RequirementFolder, RequirementReference, RequirementVersion, User, Workspace, WorkspaceParticipant, WorkspaceRole } from '../../lib/types';
+import type { AcceptanceCriterion, CommentThread, Requirement, RequirementFolder, RequirementReference, RequirementRelation, RequirementVersion, User, Workspace, WorkspaceParticipant, WorkspaceRole } from '../../lib/types';
 import { isRequirementDirty, isSaveShortcut, requirementUpdatePayload, type RequirementDraft } from './requirementEditorModel';
 import { CommentHighlights, TextFormatting, commentHighlightsKey, type CommentHighlightAnchor } from './richTextExtensions';
 import { DocumentToolbar } from './DocumentToolbar';
 import { DocumentHeader, type DocumentPanel } from './DocumentHeader';
 import { DocumentDetails, DocumentSidePanel } from './DocumentPanel';
 import { VersionHistory } from './VersionHistory';
+import { relationDetails, relationKind } from './relationSemantics';
+import { ExternalTasksDialog, newIdempotencyKey } from './ExternalTasksDialog';
 import './documentEditor.css';
 
 const emptyDoc = { type: 'doc', content: [{ type: 'paragraph' }] };
 const emptyCriterion = (position: number): AcceptanceCriterion => ({ title: '', given: '', whenText: '', thenText: '', position });
-type Props = { projectId: string; requirementId: string; workspace: Workspace; user: User; onClose: () => void; onDirtyChange?: (dirty: boolean) => void };
+type Props = { projectId: string; requirementId: string; workspace: Workspace; user: User; onClose: () => void; onDirtyChange?: (dirty: boolean) => void; onSavingChange?: (saving: boolean) => void; onNavigateRequirement?: (id: string) => void; onReturnToPreviousRequirement?: () => void; canReturnToPreviousRequirement?: boolean };
 
-export function RequirementEditor({ projectId, requirementId, workspace, user, onClose, onDirtyChange }: Props) {
+export function RequirementEditor({ projectId, requirementId, workspace, user, onClose, onDirtyChange, onSavingChange, onNavigateRequirement, onReturnToPreviousRequirement, canReturnToPreviousRequirement }: Props) {
   const client = useQueryClient();
   const [form, setForm] = useState<Partial<Requirement>>({});
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([]);
@@ -35,8 +37,11 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
   const [conflict, setConflict] = useState<Requirement | null>(null);
   const [editorTick, setEditorTick] = useState(0);
   const [panel, setPanel] = useState<DocumentPanel>(null);
+  const [relatedOpen, setRelatedOpen] = useState(false);
   const [criteriaOpen, setCriteriaOpen] = useState(false);
   const [referencesOpen, setReferencesOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [taskIdempotencyKey, setTaskIdempotencyKey] = useState<string>(newIdempotencyKey);
   const criteriaContainer = useRef<HTMLDivElement>(null);
   const focusNewCriterion = useRef(false);
   const topbar = useRef<HTMLDivElement>(null);
@@ -50,13 +55,15 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
   const loadedRequirement = useRef<string | null>(null);
   const role = workspace.role ?? 'EDITOR';
   const query = useQuery<Requirement>({ queryKey: ['requirement', requirementId], queryFn: () => api(`/requirements/${requirementId}`) });
-  const canEdit = (role === 'OWNER' || role === 'EDITOR') && query.data?.status !== 'ARCHIVED';
+  const canEdit = (role === 'OWNER' || role === 'MANAGER' || role === 'EDITOR') && query.data?.status !== 'ARCHIVED';
   const canComment = query.data?.status !== 'ARCHIVED';
-  const folders = useQuery<RequirementFolder[]>({ queryKey: ['folders', workspace.id], queryFn: () => api(`/workspaces/${workspace.id}/folders`) });
+  const folders = useQuery<RequirementFolder[]>({ queryKey: ['folders', projectId], queryFn: () => api(`/projects/${projectId}/folders`) });
   const requirement = query.data;
   const comments = useQuery<CommentThread[]>({ queryKey: ['comments', requirementId], queryFn: () => api(`/requirements/${requirementId}/comments`), enabled: Boolean(requirement) });
   const references = useQuery<RequirementReference[]>({ queryKey: ['references', requirementId], queryFn: () => api(`/requirements/${requirementId}/references`), enabled: Boolean(requirement) });
-  const members = useQuery<WorkspaceParticipant[]>({ queryKey: ['participants', workspace.id], queryFn: () => api(`/workspaces/${workspace.id}/participants`), enabled: panel === 'comments' });
+  const externalLinks = useQuery<Array<{ id: string }>>({ queryKey: ['external-links', requirementId], queryFn: () => api(`/requirements/${requirementId}/external-links`), enabled: Boolean(requirement && tasksOpen) });
+  const relations = useQuery<RequirementRelation[]>({ queryKey: ['relations', requirementId], queryFn: () => api(`/requirements/${requirementId}/relations`), enabled: Boolean(requirement) });
+  const members = useQuery<WorkspaceParticipant[]>({ queryKey: ['participants', projectId], queryFn: () => api(`/projects/${projectId}/participants`), enabled: panel === 'comments' });
   const editor = useEditor({
     editable: canEdit,
     editorProps: { attributes: { 'aria-label': 'Conteúdo do documento', role: 'textbox', 'aria-multiline': 'true' } },
@@ -115,7 +122,15 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
     setContentRequirementId(requirementId);
   }, [editor, requirement, requirementId]);
   useEffect(() => () => { loadedRequirement.current = null; }, [requirementId]);
-  useEffect(() => { setHistoricalVersion(null); }, [requirementId]);
+  useEffect(() => {
+    setHistoricalVersion(null);
+    setPanel(null);
+    setActiveCommentId(null);
+    setCommentBody('');
+    setSelection(null);
+    setConflict(null);
+    setTaskIdempotencyKey(newIdempotencyKey());
+  }, [requirementId]);
   const draft = useMemo(() => ({ title: String(form.title ?? ''), status: form.status as Requirement['status'], folderId: String(form.folderId ?? requirement?.folderId ?? ''), criteria, content: editor?.getJSON() ?? emptyDoc }), [criteria, editor, editorTick, form, requirement?.folderId]);
   const dirty = useMemo(() => Boolean(base && isRequirementDirty(base, draft)), [base, draft]);
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
@@ -148,11 +163,19 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
     },
     onError: async (error) => { if (error instanceof ApiError && error.code === 'REQUIREMENT_REVISION_CONFLICT') setConflict(await api(`/requirements/${requirementId}`)); },
   });
+  useEffect(() => { onSavingChange?.(save.isPending); return () => onSavingChange?.(false); }, [onSavingChange, save.isPending]);
   const saveNow = () => { if (canEdit && base && dirty && !save.isPending) {
     submittedCriteria.current = criteria;
     submittedDraft.current = draft;
     save.mutate(requirementUpdatePayload(base, draft));
   } };
+  const saveDraftBeforeTask = async () => {
+    if (!dirty) return;
+    if (!canEdit || !base || save.isPending) throw new Error('Aguarde o salvamento atual da US.');
+    submittedCriteria.current = criteria;
+    submittedDraft.current = draft;
+    await save.mutateAsync(requirementUpdatePayload(base, draft));
+  };
   const archive = useMutation({ mutationFn: () => api(`/requirements/${requirementId}`, { method: 'DELETE' }), onSuccess: () => { client.invalidateQueries({ queryKey: ['requirements', projectId] }); client.invalidateQueries({ queryKey: ['graph', projectId] }); onClose(); } });
   const createComment = useMutation({ mutationFn: () => api<CommentThread>(`/requirements/${requirementId}/comments`, { method: 'POST', body: JSON.stringify({ body: commentBody.trim(), anchor: selection ?? undefined, mentionedUserIds: (members.data ?? []).filter((member) => commentBody.includes(`@${member.name}`)).map((member) => member.id) }) }), onSuccess: () => { setCommentBody(''); setSelection(null); client.invalidateQueries({ queryKey: ['comments', requirementId] }); client.invalidateQueries({ queryKey: ['notifications'] }); } });
   const setThreadStatus = useMutation({ mutationFn: ({ id, status }: { id: string; status: 'OPEN' | 'RESOLVED' }) => api(`/comments/${id}/${status === 'RESOLVED' ? 'resolve' : 'reopen'}`, { method: 'PATCH' }), onSuccess: () => client.invalidateQueries({ queryKey: ['comments', requirementId] }) });
@@ -185,7 +208,9 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
     <div className="document-topbar" ref={topbar}>
       <DocumentHeader code={requirement.code} revision={displayedRevision} title={displayedTitle}
         editable={canEdit && !previewingHistory} dirty={previewingHistory ? false : dirty} saving={previewingHistory ? false : save.isPending} error={previewingHistory ? false : Boolean(save.error)} historicalPreview={previewingHistory}
+        relatedCount={relations.data?.length ?? 0} relatedOpen={relatedOpen} onToggleRelated={() => setRelatedOpen(open => !open)}
         commentCount={comments.data?.filter(thread => thread.status === 'OPEN').length ?? 0}
+        tasksAvailable={!previewingHistory && requirement.status !== 'ARCHIVED'} taskCount={externalLinks.data?.length ?? 0} onTasks={() => setTasksOpen(true)}
         panel={panel} onPanel={setPanel} onTitle={title => set('title', title)} onClose={close} onSave={saveNow}
         archiveDisabled={archive.isPending || requirement.status === 'ARCHIVED'}
         onArchive={() => { if (window.confirm('Cancelar esta US? Ela ficará arquivada e sem relações.')) archive.mutate(); }}/>
@@ -194,7 +219,7 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
     {save.error && <div className="inline-error editor-error" role="alert">{save.error.message}</div>}
     {archive.error && <div className="inline-error editor-error" role="alert">{archive.error.message}</div>}
     {previewingHistory ? <div className="historical-preview-banner" role="status"><div><span>Visualizando revisão {historicalVersion?.revision}</span><small>Esta é uma cópia de consulta. Sua edição atual permanece preservada.</small></div><button type="button" className="secondary-button" onClick={() => setHistoricalVersion(null)}>Voltar para a revisão atual</button></div> : !canEdit && <div className="editor-readonly">{requirement.status === 'ARCHIVED' ? 'Esta US está cancelada e disponível somente para consulta.' : <>Você possui acesso de {roleLabel(role)}. {canComment ? 'Você pode comentar, mas não alterar o documento.' : 'Este documento está em modo de leitura.'}</>}</div>}
-    <div className={`document-layout ${panel ? 'with-panel' : ''}`}>
+    <div className={`document-layout ${relatedOpen ? 'with-related-stories' : ''} ${panel ? 'with-panel' : ''}`}>
       <div className="document-main-column">
         <section className={`document-paper ${previewingHistory ? 'historical-document-paper' : ''}`} aria-label={previewingHistory ? `Documento da revisão ${historicalVersion?.revision}` : 'Documento da US'}><div className="rich-editor rich-document"><EditorContent editor={previewingHistory ? historicalEditor : editor}/></div></section>
         {!previewingHistory && <><section className="document-supplement">
@@ -212,23 +237,58 @@ export function RequirementEditor({ projectId, requirementId, workspace, user, o
         </section>
         <section className="document-supplement">
           <button type="button" className="document-section-toggle" aria-expanded={referencesOpen} aria-controls="document-references" onClick={() => setReferencesOpen(!referencesOpen)}>
-            <Icon name="chevron" size={16} className={referencesOpen ? 'expanded' : ''}/><h2>Referências</h2><span className="document-count">{referenceItems.length}</span>
+            <Icon name="chevron" size={16} className={referencesOpen ? 'expanded' : ''}/><h2>Links externos</h2><span className="document-count">{referenceItems.length}</span>
           </button>
           <div id="document-references" hidden={!referencesOpen}>
-            <p className="section-help">Referências sugeridas pela análise automática aparecerão aqui.</p>
             <div className="reference-list">{referenceItems.map(item => <div className="reference-row" key={item.id}><span className={`reference-type ${item.type.toLowerCase()}`}>{item.type === 'PROTOTYPE' ? 'Protótipo' : 'Anexo'}</span><a href={item.url} target="_blank" rel="noreferrer">{item.name}</a>{canEdit && <button type="button" className="text-button" disabled={removeReference.isPending} onClick={() => removeReference.mutate(item.id)}>Remover</button>}</div>)}</div>
-            {!referenceItems.length && <p className="empty-copy">Nenhuma referência disponível.</p>}
+            {!referenceItems.length && <p className="empty-copy">Nenhum link externo.</p>}
             {removeReference.error && <p className="inline-error" role="alert">{removeReference.error.message}</p>}
           </div>
         </section>
         </>}
       </div>
+      {!previewingHistory && relatedOpen && <RelatedStoriesPanel requirement={requirement} currentTitle={String(form.title ?? requirement.title)} editable={canEdit} relations={relations.data ?? []} loading={relations.isLoading} error={relations.error} retry={() => void relations.refetch()} saving={save.isPending} onNavigate={onNavigateRequirement ?? (() => {})} canReturn={Boolean(canReturnToPreviousRequirement)} onReturn={onReturnToPreviousRequirement ?? (() => {})}/>}
       {panel && <DocumentSidePanel title={panel === 'details' ? 'Detalhes da US' : panel === 'history' ? 'Histórico de versões' : 'Comentários'} onClose={() => { setPanel(null); setActiveCommentId(null); }}>
         {panel === 'details' ? <DocumentDetails status={String(form.status ?? 'DRAFT')} folderId={String(form.folderId ?? requirement.folderId)} folders={folders.data ?? []} editable={canEdit && !previewingHistory} onFolder={id => set('folderId', id)}/> : panel === 'history' ? <VersionHistory requirementId={requirementId} selectedRevision={historicalVersion?.revision} onSelectVersion={setHistoricalVersion}/> :
           <CommentSidebar threads={comments.data ?? []} role={role} user={user} members={members.data ?? []} canComment={canComment} selection={selection} body={commentBody} activeCommentId={activeCommentId} onActiveComment={setActiveCommentId} onBody={setCommentBody} onCreate={() => createComment.mutate()} pending={createComment.isPending} createError={createComment.error} onStatus={(id, status) => setThreadStatus.mutate({ id, status })} onReply={(id, body) => addReply.mutate({ id, body })}/>}
       </DocumentSidePanel>}
     </div>
+    {tasksOpen && <ExternalTasksDialog projectId={projectId} requirementId={requirementId} code={requirement.code} revision={base?.revision ?? requirement.revision} title={String(form.title ?? requirement.title)} content={draft.content} criteria={criteria} editable={canEdit && !previewingHistory} idempotencyKey={taskIdempotencyKey} onIdempotencyKeyChange={setTaskIdempotencyKey} onSaveDraft={saveDraftBeforeTask} onClose={() => setTasksOpen(false)}/>}
     {conflict && <ConflictDialog conflict={conflict} onServer={() => { setForm(conflict); setCriteria(conflict.criteria.map((criterion, position) => ({ ...criterion, position }))); setCriteriaOpen(conflict.criteria.length > 0); editor?.commands.setContent(conflict.content); setBase({ ...conflict, content: editor?.getJSON() ?? conflict.content }); setConflict(null); save.reset(); }} onMine={() => { setBase(conflict); setConflict(null); save.reset(); }}/>}</main>;
+}
+
+function RelatedStoriesPanel({ requirement, currentTitle, editable, relations, loading, error, retry, saving, onNavigate, canReturn, onReturn }: { requirement: Requirement; currentTitle: string; editable: boolean; relations: RequirementRelation[]; loading: boolean; error: Error | null; retry: () => void; saving: boolean; onNavigate: (id: string) => void; canReturn: boolean; onReturn: () => void }) {
+  const relationCountByOther = new Map<string, number>();
+  relations.forEach((relation) => {
+    const otherId = relation.sourceId === requirement.id ? relation.targetId : relation.sourceId;
+    relationCountByOther.set(otherId, (relationCountByOther.get(otherId) ?? 0) + 1);
+  });
+  return <aside id="related-stories-panel" className="related-stories-panel" aria-label="US relacionadas">
+    <header className="related-stories-heading">
+      <span>US atual</span>
+      <strong>{requirement.code}</strong>
+      <p>{currentTitle}</p>
+      <small>{editable ? 'Modo de edição' : 'Somente leitura'}</small>
+    </header>
+    {canReturn && <button type="button" className="related-stories-back" disabled={saving} onClick={onReturn}>← Voltar à US anterior</button>}
+    <div className="related-stories-list" aria-live="polite">
+      <h2>US relacionadas <span className="document-count">{relations.length}</span></h2>
+      {loading && <p className="empty-copy" role="status">Carregando relações…</p>}
+      {error && <div className="related-stories-error" role="alert"><p>Não foi possível carregar as relações. {error.message}</p><button type="button" className="text-button" onClick={retry}>Tentar novamente</button></div>}
+      {!loading && !error && relations.length === 0 && <p className="empty-copy">Esta US ainda não tem relações.</p>}
+      {[...relationCountByOther.values()].some((count) => count > 1) && <p className="related-stories-legacy" role="status">Algumas US aparecem mais de uma vez porque têm relações antigas diferentes.</p>}
+      {!error && relations.map((relation) => {
+        const other = relation.sourceId === requirement.id ? relation.target : relation.source;
+        const meaning = relationDetails(relationKind(relation.type, relation.sourceId, relation.targetId, requirement.id), requirement.code, other.code);
+        return <button key={relation.id} type="button" className="related-story-link" aria-label={`Abrir ${other.code} ${other.title}`} disabled={saving} onClick={() => onNavigate(other.id)}>
+          <span className="related-story-code">{other.code}{(relationCountByOther.get(other.id) ?? 1) > 1 && ` · ${relationCountByOther.get(other.id)} relações`}</span>
+          <strong>{other.title}</strong>
+          <small>{meaning.title} · {meaning.sentence}</small>
+        </button>;
+      })}
+    </div>
+    {saving && <p className="related-stories-saving" role="status">Salvando alterações…</p>}
+  </aside>;
 }
 
 function CriterionCard({ criterion, index, editable, onChange, onRemove }: { criterion: AcceptanceCriterion; index: number; editable: boolean; onChange: (index: number, key: keyof AcceptanceCriterion, value: string) => void; onRemove: () => void }) { return <article className="criterion-card"><header><span>CA{String(index + 1).padStart(2, '0')}</span>{editable && <button className="text-button" onClick={onRemove}>Remover</button>}</header><input disabled={!editable} value={criterion.title ?? ''} onChange={(event) => onChange(index, 'title', event.target.value)} aria-label={`Título do critério ${index + 1}`} placeholder="Título do critério"/><div className="gherkin-fields"><label>Dado<input disabled={!editable} value={criterion.given ?? ''} onChange={(event) => onChange(index, 'given', event.target.value)} placeholder="o contexto"/></label><label>Quando<input disabled={!editable} value={criterion.whenText ?? ''} onChange={(event) => onChange(index, 'whenText', event.target.value)} placeholder="a ação ocorre"/></label><label>Então<input disabled={!editable} value={criterion.thenText ?? criterion.text ?? ''} onChange={(event) => onChange(index, 'thenText', event.target.value)} placeholder="o resultado esperado"/></label></div></article>; }
@@ -258,7 +318,7 @@ function CommentSidebar({ threads, role, user, members, canComment, selection, b
 }
 function CommentItem({ thread, user, role, canComment, active, onActive, onInactive, onStatus, onReply }: { thread: CommentThread; user: User; role: WorkspaceRole; canComment: boolean; active: boolean; onActive: () => void; onInactive: () => void; onStatus: (id: string, status: 'OPEN' | 'RESOLVED') => void; onReply: (id: string, body: string) => void }) {
   const [reply, setReply] = useState('');
-  const canResolve = thread.author.id === user.id || role === 'OWNER' || role === 'EDITOR';
+  const canResolve = thread.author.id === user.id || role === 'OWNER' || role === 'MANAGER' || role === 'EDITOR';
   const quote = thread.anchor?.quote ?? thread.quote;
   const isOpen = thread.status === 'OPEN';
   const sendReply = () => { if (!reply.trim()) return; onReply(thread.id, reply); setReply(''); };
@@ -271,4 +331,4 @@ function CommentItem({ thread, user, role, canComment, active, onActive, onInact
   </article>;
 }
 function ConflictDialog({ conflict, onServer, onMine }: { conflict: Requirement; onServer: () => void; onMine: () => void }) { return <div className="modal-backdrop"><section className="modal-card"><p className="section-kicker">Conflito de revisão</p><h2>Uma versão mais recente foi salva</h2><p className="form-lead">A revisão atual é v{conflict.revision}. Sua edição continua preservada nesta tela.</p><div className="conflict-actions"><button className="secondary-button" onClick={onServer}>Usar versão atual</button><button className="primary-button" onClick={onMine}>Manter minha edição</button></div></section></div>; }
-function roleLabel(role: WorkspaceRole) { return ({ OWNER: 'proprietário', EDITOR: 'editor', VIEWER: 'leitor' } as const)[role]; }
+function roleLabel(role: WorkspaceRole) { return ({ OWNER: 'proprietário', MANAGER: 'gerência', EDITOR: 'editor', VIEWER: 'leitor' } as const)[role]; }

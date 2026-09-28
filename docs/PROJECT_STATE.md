@@ -2,12 +2,12 @@
 
 ## Entregue
 
-- Monorepo PNPM organizado em `frontend/` (React), `backend/api/` (NestJS), `ai/` (providers e operações de IA), `packages/shared/` (contratos) e `docs/`.
+- Monorepo PNPM organizado em `frontend/` (React), `backend/api/` (NestJS), `packages/shared/` (contratos) e `docs/`.
 - Núcleo persistente: autenticação por cookies, confirmação de e-mail, recuperação de senha, sessões rotativas por dispositivo, convites Resend, workspaces, projetos, requisitos, critérios, revisões, relações e grafo.
 - Editor de requisito com TipTap Community: documento JSON persistido, toolbar de formatação estilo Docs, salvamento explícito, revisão otimista, recuperação de conflito e proteção contra saída com alterações não salvas.
 - Colaboração de workspace: papéis `OWNER`, `EDITOR` e `VIEWER`; gestão de membros pelo Owner; templates do workspace; referências de protótipo/anexo existentes; comentários em thread, menções e notificações internas. `VIEWER` lê e comenta, mas não edita.
 - User Story estruturada e critérios de aceite enriquecidos para representar cenários `Dado / Quando / Então`, além de tabelas de especificação no documento.
-- Google Drive possui vínculo de raiz por projeto, árvore de subpastas, sincronização automática a cada 10 minutos e botão manual; alterações de arquivos suportados são espelhadas nos dois sentidos por outbox persistente. A análise global aplica dependências ao grafo automaticamente, preservando bloqueios de relações removidas manualmente.
+- Google Drive possui pastas por projeto, raiz de exportação selecionável por OWNER, vínculos adicionais para importação, exportação explícita em lote de US ativas sem vínculo e sincronização automática a cada 10 minutos. Criação/edição/movimentação/arquivamento de US e mudanças na árvore usam outbox idempotente com estado e erro visíveis. A análise global aplica dependências ao grafo automaticamente, preservando bloqueios de relações removidas manualmente.
 - Reformulação em andamento: requisitos são User Stories únicas, organizadas por pastas, com status automático e editor baseado somente no Documento. US canceladas ficam disponíveis em Canceladas para consulta somente leitura, sem relações ou novas interações de comentário.
 
 ## Limites deliberados do passe colaborativo
@@ -20,7 +20,7 @@
 
 - M3: executar providers de IA configurados e validar pgvector em ambiente PostgreSQL novo; migração automática do RequisitoGraph não faz parte desta baseline.
 - M4/M5: fluxos OAuth Google, PAT GitHub e jobs de importação/sincronização.
-- Configurações de pastas concluídas neste passe: OWNER/EDITOR podem editar nome/descrição e excluir com realocação transacional para `Sem pasta`; nomes são validados como obrigatórios e únicos, e VIEWER permanece somente leitura.
+- Configurações de pastas concluídas neste passe: OWNER/EDITOR gerenciam árvores por projeto, incluindo renomear e mover; excluir realoca US para `Sem pasta` e move pastas remotas mapeadas para a Lixeira. A migração clona as árvores legadas para projetos e preserva workspaces ainda sem projeto.
 - Próximo passe: concluir configurações de templates, sugestões confirmáveis de IA e validação visual do fluxo Pastas → US → Grafo.
 
 ## Verificação

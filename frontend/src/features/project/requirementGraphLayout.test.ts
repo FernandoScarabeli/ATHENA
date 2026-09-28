@@ -51,12 +51,59 @@ describe('requirement map layout', () => {
     const ids = stories.map((node) => node.id).sort();
     const byId = new Map(stories.map((node) => [node.id, node]));
 
-    expect(ids).toEqual(['r1', 'r2']);
+    expect(ids).toEqual(['focus-relation-e1', 'r1']);
     expect(byId.get('r1')?.data.relationState).toBe('selected');
-    expect(byId.get('r2')?.data.relationState).toBe('related');
+    expect(byId.get('focus-relation-e1')?.data.requirementId).toBe('r2');
+    expect(byId.get('focus-relation-e1')?.data.relationState).toBe('related');
     expect(nodes.some((node) => node.type === 'folder')).toBe(false);
     expect(nodes.every((node) => !node.parentId)).toBe(true);
-    expect(visibleMapEdges(graph, nodes, 'r1').map((edge) => edge.id)).toEqual(['e1']);
+    expect(visibleMapEdges(graph, nodes, 'r1', 'r1')).toMatchObject([{ id: 'e1', source: 'focus-relation-e1', target: 'r1' }]);
+  });
+
+  it('places all five flows around the focused US and preserves every legacy relation', () => {
+    const focusedGraph: GraphResponse = {
+      nodes: graph.nodes,
+      edges: [
+        { id: 'pre', source: 'r1', target: 'r2', type: 'DEPENDS_ON' },
+        { id: 'post', source: 'r3', target: 'r1', type: 'DEPENDS_ON' },
+        { id: 'blocker', source: 'r4', target: 'r1', type: 'BLOCKS' },
+        { id: 'blocked', source: 'r1', target: 'r5', type: 'BLOCKS' },
+        { id: 'related', source: 'r1', target: 'r3', type: 'RELATED_TO' },
+      ],
+    };
+    const nodes = buildRequirementMap(focusedGraph, folders, requirements, '', 'r1', 'r1');
+    const byId = new Map(requirementNodes(nodes).map((node) => [node.id, node]));
+    const root = byId.get('r1')!;
+    const pre = byId.get('focus-relation-pre')!;
+    const post = byId.get('focus-relation-post')!;
+    const blocker = byId.get('focus-relation-blocker')!;
+    const blocked = byId.get('focus-relation-blocked')!;
+    const related = byId.get('focus-relation-related')!;
+
+    expect(pre.position.x).toBeLessThan(root.position.x);
+    expect(post.position.x).toBeGreaterThan(root.position.x);
+    expect(blocker.position.x).toBe(pre.position.x);
+    expect(blocker.position.y).toBeGreaterThan(pre.position.y);
+    expect(blocked.position.x).toBe(post.position.x);
+    expect(blocked.position.y).toBeGreaterThan(post.position.y);
+    expect(related.position.y).toBeLessThan(root.position.y);
+    expect(post.data.requirementId).toBe(related.data.requirementId);
+    expect(post.data.focusRelation?.total).toBe(2);
+    expect(related.data.focusRelation?.total).toBe(2);
+    expect(visibleMapEdges(focusedGraph, nodes, 'r1', 'r1')).toHaveLength(5);
+    expect(visibleMapEdges(focusedGraph, nodes, 'r1', 'r1').find((edge) => edge.id === 'blocked')).toMatchObject({ source: 'r1', target: 'focus-relation-blocked' });
+  });
+
+  it('fans out multiple overview edges for an old pair without hiding either direction', () => {
+    const parallelGraph: GraphResponse = { nodes: graph.nodes, edges: [
+      { id: 'a', source: 'r1', target: 'r2', type: 'BLOCKS' },
+      { id: 'b', source: 'r2', target: 'r1', type: 'BLOCKS' },
+    ] };
+    const nodes = buildRequirementMap(parallelGraph, folders, requirements, '');
+    const edges = visibleMapEdges(parallelGraph, nodes);
+    expect(edges.map((edge) => edge.type)).toEqual(['relation', 'relation']);
+    expect(edges.map((edge) => edge.data?.curveOffset)).toEqual([-32, 32]);
+    expect(edges.map((edge) => [edge.source, edge.target])).toEqual([['r1', 'r2'], ['r2', 'r1']]);
   });
 
   it('shows only a lone User Story in focused mode when it has no relations', () => {
@@ -76,6 +123,22 @@ describe('requirement map layout', () => {
     expect(byId.get('r3')?.data.relationState).toBe('idle');
     expect(edges.find((edge) => edge.id === 'e1')?.style).toMatchObject({ opacity: 1, stroke: '#c76a27' });
     expect(edges.find((edge) => edge.id === 'e2')?.style).toMatchObject({ opacity: 0.26 });
+    expect(edges.find((edge) => edge.id === 'e1')).toMatchObject({ type: 'relation', label: 'PRÉ-REQUISITO PARA' });
+  });
+
+  it('gives the selected story folder more room and keeps nested contents inside it', () => {
+    const baseline = new Map(buildRequirementMap(graph, folders, requirements, '').map((node) => [node.id, node]));
+    const selected = new Map(buildRequirementMap(graph, folders, requirements, '', null, 'r2').map((node) => [node.id, node]));
+    const folder = selected.get('child');
+    const parent = selected.get('parent');
+
+    expect(folder?.type).toBe('folder');
+    expect(folder?.data.highlighted).toBe(true);
+    expect(Number(folder?.style?.width)).toBeGreaterThan(Number(baseline.get('child')?.style?.width));
+    expect(Number(folder?.style?.height)).toBeGreaterThan(Number(baseline.get('child')?.style?.height));
+    expect(selected.get('r2')?.position.x).toBeGreaterThan(baseline.get('r2')?.position.x ?? 0);
+    expect(Number(parent?.style?.width)).toBeGreaterThanOrEqual(Number(folder?.style?.width));
+    expect(selected.get('other')?.data.highlighted).toBe(false);
   });
 
   it('keeps empty folder groups available when the project has no requirements', () => {
